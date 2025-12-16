@@ -1,0 +1,12 @@
+{
+  "paper_id": "2308.04079",
+  "title": "3D Gaussian Splatting for Real-Time Radiance Field Rendering",
+  "raw_text": "Abstract\n\nWe introduce 3D Gaussian Splatting, a novel method for real-time radiance field rendering. Our approach represents scenes as a collection of 3D Gaussian primitives and uses a differentiable rasterization pipeline to render images. We demonstrate that our method achieves state-of-the-art visual quality while maintaining real-time rendering speeds.\n\nIntroduction\n\nNeural radiance fields (NeRF) have shown remarkable success in novel view synthesis. However, existing methods require significant computational resources and cannot achieve real-time rendering. In this work, we propose 3D Gaussian Splatting as an efficient alternative.\n\nMethod\n\nOur approach represents scenes using 3D Gaussian primitives. Each Gaussian is parameterized by its position, covariance matrix, and color. We use a differentiable rasterization pipeline that enables end-to-end optimization.\n\nResults\n\nWe evaluate our method on several datasets including Mip-NeRF 360 and Tanks and Temples. Our method achieves PSNR scores of 30.1 dB on Mip-NeRF 360, outperforming NeRF (28.9 dB) and Mip-NeRF (29.5 dB). We also achieve real-time rendering at 60 FPS on modern GPUs.\n\nConclusion\n\n3D Gaussian Splatting provides an efficient solution for real-time radiance field rendering with state-of-the-art quality.",
+  "metadata": {
+    "authors": ["Kerbl", "Kopanas", "Leimkühler"],
+    "year": 2023,
+    "venue": "SIGGRAPH"
+  }
+}
+
+
