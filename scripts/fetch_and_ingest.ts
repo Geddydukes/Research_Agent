@@ -8,7 +8,6 @@ import { parsePaperFile } from '../src/utils/paperParser';
 import { runPipeline } from '../src/pipeline/runPipeline';
 import { runReasoningBatch } from '../src/pipeline/runReasoningBatch';
 import { createDatabaseClient } from '../src/db/client';
-import path from 'path';
 
 const defaultLogger = {
   error: (msg: string, ctx?: Record<string, unknown>) => console.error(`[Ingest] ${msg}`, ctx || ''),
@@ -55,14 +54,20 @@ async function main() {
   if (!useArxivOnly) {
     try {
       console.log('[Select] Starting selection from Semantic Scholar...');
-      selection = await selectCorpus({
+      console.log('[Select] Calling selectCorpus with seedTitle:', seedTitle);
+      const selectPromise = selectCorpus({
         seedTitle,
         ssApiKey,
         googleApiKey,
         config: { embeddingsModel },
       });
+      console.log('[Select] selectCorpus promise created, awaiting...');
+      selection = await selectPromise;
+      console.log('[Select] Semantic Scholar selection completed:', selection ? `${selection.selected.length} papers selected` : 'null');
     } catch (err) {
-      console.warn('[Select] Semantic Scholar failed, falling back to arXiv-only selection', err);
+      console.error('[Select] Semantic Scholar failed, falling back to arXiv-only selection', err);
+      console.error('[Select] Error details:', err instanceof Error ? err.message : String(err));
+      console.error('[Select] Error stack:', err instanceof Error ? err.stack : 'No stack trace');
     }
   }
 
@@ -78,9 +83,9 @@ async function main() {
   }
 
   // Resolve arXiv IDs aggressively (normalize + title search), and allow metadata-only fallback
+  // Process ALL selected papers (no limit on filtering)
   const resolved: typeof selection.selected = [];
   for (const p of selection.selected) {
-    if (resolved.length >= limit) break;
     const direct = p.arxivId || extractArxivId(p);
     if (direct) {
       resolved.push({ ...p, arxivId: direct });
@@ -111,12 +116,12 @@ async function main() {
   }
 
   console.log(
-    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected: ${resolved.length} | With arxiv: ${downloadable.length} | To download: ${toDownload.length} (target ${limit})`
+    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected: ${resolved.length} | With arxiv: ${downloadable.length} | To download: ${toDownload.length}`
   );
 
   const downloads =
     toDownload.length > 0
-      ? await downloadPdfsForSelected(toDownload as any, downloadDir, Math.min(toDownload.length, limit))
+      ? await downloadPdfsForSelected(toDownload as any, downloadDir, toDownload.length)
       : [];
 
   const succeeded = downloads.filter((d) => d.ok) as Array<{
@@ -132,7 +137,8 @@ async function main() {
   }
 
   // Prepare ingestion tasks: downloaded PDFs first, then metadata-only if no PDF
-  const ingestTasks = resolved.slice(0, limit).map(async (p) => {
+  // Process ALL resolved papers (no limit)
+  const ingestTasks = resolved.map(async (p) => {
     const downloaded = succeeded.find((d) => d.paperId === p.paperId || d.paperId === p.arxivId);
     if (!downloaded) {
       console.warn(`[Ingest] No PDF for ${p.paperId}; skipping PDF parse and storing metadata only.`);

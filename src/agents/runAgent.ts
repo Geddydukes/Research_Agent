@@ -211,11 +211,8 @@ export async function runAgent<T>(
         let timeoutHandle: NodeJS.Timeout | null = null;
         const timeoutPromise = new Promise<Awaited<ReturnType<typeof model.generateContent>>>((_, reject) => {
           timeoutHandle = setTimeout(() => {
-            reject(new Error(`Operation timed out after ${config.timeoutMs}ms`));
+            reject(new TimeoutError(agentName, config.timeoutMs));
           }, config.timeoutMs);
-          if (timeoutHandle.unref) {
-            timeoutHandle.unref();
-          }
         });
 
         try {
@@ -227,6 +224,10 @@ export async function runAgent<T>(
         } catch (error) {
           if (timeoutHandle) {
             clearTimeout(timeoutHandle);
+          }
+          // TimeoutError is already the right type, just re-throw
+          if (error instanceof TimeoutError) {
+            throw error;
           }
           throw error;
         }
@@ -351,14 +352,20 @@ export async function runAgent<T>(
         continue;
       }
     } catch (error) {
+      // Handle timeout errors - check both the error message and the error type
       if (
         error instanceof Error &&
-        error.message.includes('timed out')
+        (error.message.includes('timed out') || error.message.includes('Operation timed out'))
       ) {
+        logger.warn(`[${agentName}] Timeout detected, converting to TimeoutError`);
         throw new TimeoutError(agentName, config.timeoutMs);
       }
 
       if (error instanceof SchemaValidationError) {
+        throw error;
+      }
+      
+      if (error instanceof TimeoutError) {
         throw error;
       }
 

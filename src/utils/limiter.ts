@@ -17,14 +17,38 @@ const defaultConfig: LimiterConfig = {
 class LaneLimiter {
   private queues: Map<Lane, Array<() => void>> = new Map();
   private running: Map<Lane, number> = new Map();
+  private lastRequestTime: Map<Lane, number> = new Map();
   private config: LimiterConfig;
+  private rateLimits: Map<Lane, number> = new Map();
 
   constructor(config?: Partial<LimiterConfig>) {
     this.config = { ...defaultConfig, ...config };
     for (const lane of Object.keys(defaultConfig) as Lane[]) {
       this.queues.set(lane, []);
       this.running.set(lane, 0);
+      this.lastRequestTime.set(lane, 0);
     }
+    
+    // Rate limits in milliseconds (minimum delay between requests)
+    // Semantic Scholar: 1 req/sec regardless of API key status
+    const ssRateLimit = 1000; // 1000ms = 1 req/sec (enforced even with API key)
+    this.rateLimits.set('semantic_scholar', ssRateLimit);
+  }
+
+  private async waitForRateLimit(lane: Lane): Promise<void> {
+    const rateLimit = this.rateLimits.get(lane);
+    if (!rateLimit) return;
+
+    const lastTime = this.lastRequestTime.get(lane) || 0;
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastTime;
+    
+    if (timeSinceLastRequest < rateLimit) {
+      const waitTime = rateLimit - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    this.lastRequestTime.set(lane, Date.now());
   }
 
   async limit<T>(lane: Lane, fn: () => Promise<T>): Promise<T> {
@@ -32,6 +56,7 @@ class LaneLimiter {
     const running = this.running.get(lane) || 0;
 
     if (running < max) {
+      await this.waitForRateLimit(lane);
       this.running.set(lane, running + 1);
       try {
         return await fn();
@@ -43,6 +68,7 @@ class LaneLimiter {
 
     return new Promise<T>((resolve) => {
       this.queues.get(lane)!.push(async () => {
+        await this.waitForRateLimit(lane);
         this.running.set(lane, (this.running.get(lane) || 0) + 1);
         try {
           const result = await fn();
@@ -70,7 +96,7 @@ class LaneLimiter {
 const globalLimiterConfig = {
   gemini_llm: Number(process.env.GEMINI_LLM_CONCURRENCY || '2'),
   gemini_embed: Number(process.env.GEMINI_EMBED_CONCURRENCY || '4'),
-  semantic_scholar: Number(process.env.SS_CONCURRENCY || '2'),
+  semantic_scholar: Number(process.env.SS_CONCURRENCY || '1'), // Set to 1 to respect rate limits
   arxiv_download: Number(process.env.ARXIV_CONCURRENCY || '3'),
 };
 

@@ -1,0 +1,410 @@
+
+> research-agent-kg@1.0.0 ingest:selected
+> ts-node scripts/fetch_and_ingest.ts 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+
+[Limiter] Concurrency limits: {
+  gemini_llm: 2,
+  gemini_embed: 4,
+  semantic_scholar: 1,
+  arxiv_download: 3
+}
+[env] cwd: /Users/geddydukes/Desktop/Research_agent
+[env] GOOGLE_API_KEY present: true
+[Select] Starting selection from Semantic Scholar...
+[Select] Calling selectCorpus with seedTitle: 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+[Selection] Searching for seed paper: 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+[Selection] Calling ss.searchPaperByTitle with limit: 20
+[Select] selectCorpus promise created, awaiting...
+[Selection] Seed matches found: 20
+[Selection] Selected seed paper: 2cc1d857e86d5152ba7fe6a8355c2a0150cc280a 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+[Selection] Fetching citations for seed paper: 2cc1d857e86d5152ba7fe6a8355c2a0150cc280a limit: 100
+[Selection] citations fetch failed, continuing without citations SS citations failed: 500 {"message": "Internal Server Error"}
+
+[Selection] Error stack: Error: SS citations failed: 500 {"message": "Internal Server Error"}
+
+    at /Users/geddydukes/Desktop/Research_agent/src/ingest/semanticScholar/client.ts:111:30
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async LaneLimiter.limit (/Users/geddydukes/Desktop/Research_agent/src/utils/limiter.ts:62:16)
+    at async withRetry (/Users/geddydukes/Desktop/Research_agent/src/utils/retry.ts:12:14)
+    at async selectCorpus (/Users/geddydukes/Desktop/Research_agent/src/ingest/semanticScholar/selection.ts:117:15)
+    at async main (/Users/geddydukes/Desktop/Research_agent/scripts/fetch_and_ingest.ts:65:19)
+[Selection] Fetching references for seed paper: 2cc1d857e86d5152ba7fe6a8355c2a0150cc280a limit: 100
+[Selection] references fetch failed, continuing without references SS references failed: 500 {"message": "Internal Server Error"}
+
+[Selection] Error stack: Error: SS references failed: 500 {"message": "Internal Server Error"}
+
+    at /Users/geddydukes/Desktop/Research_agent/src/ingest/semanticScholar/client.ts:149:30
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async LaneLimiter.limit (/Users/geddydukes/Desktop/Research_agent/src/utils/limiter.ts:62:16)
+    at async withRetry (/Users/geddydukes/Desktop/Research_agent/src/utils/retry.ts:12:14)
+    at async selectCorpus (/Users/geddydukes/Desktop/Research_agent/src/ingest/semanticScholar/selection.ts:133:13)
+    at async main (/Users/geddydukes/Desktop/Research_agent/scripts/fetch_and_ingest.ts:65:19)
+[Selection] Keyword search: Gaussian Splatting limit: 60
+[Selection] Keyword results for Gaussian Splatting : 59
+[Selection] Keyword search: 3D Gaussian Splatting limit: 60
+[Selection] Keyword results for 3D Gaussian Splatting : 60
+[Selection] Keyword search: splatting radiance field limit: 60
+[Selection] Keyword results for splatting radiance field : 57
+[Selection] Keyword search: point-based radiance fields limit: 60
+[Selection] Keyword results for point-based radiance fields : 55
+[Select] Semantic Scholar selection completed: 41 papers selected
+[Select] Filtered: 6/15 papers need download (9 already exist)
+[Select] Seed: 3D Gaussian Splatting for Real-Time Radiance Field Rendering (2023) | Selected: 20 | With arxiv: 15 | To download: 6 (target 20)
+[Download] Success: 6 | Failed: 0
+[Ingest] No PDF for 2cc1d857e86d5152ba7fe6a8355c2a0150cc280a; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 67125bc119b09520dc45ed401644db0516eb9d30; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 3c88b80b9967695297aa0c85a23ca2bae726519e; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 9942392f8f7cd20019495942cee2eb657c4402bf; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 941ada3e24e6f54bb49cfaeff998f4f5cbac5a38; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for bddaa694b5f27daddc05cb81546dba0e6aa9920e; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 8505897a43df9adb99a506e5868ae2ff4871063b; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for a6e46344388dc3686bff3efb78ba75790ce11cd6; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for a07e83f510e23cf92caa7defdcd59e11757d5da8; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 9c0d40f01ced7d425cb6145e9f961c6e44a478a8; skipping PDF parse and storing metadata only.
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/41d3cc431b76cc769a3263e66a9b87f7b3a8fde8.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/716754c9f228a4f63d8e6edb81e200d6f4ea0c3a.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/9a898d3ebe03a6bd46176b721bc4bb839fe1cdcb.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/fc54a8f8272688851fdd5dfbf9f1deacbe39eb30.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/395bfdae59f1a5fde16213cade43d2587e4565df.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/65902a95d5af409938b28b69808e916f8ef9e0bd.pdf
+[Ingest] No PDF for 45ee0f9e4ee28e62da43de89e29f1781039321eb; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 3a246eb650dba2f46a857fe0c4da56d3f329d026; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 75baff43a5dffb8a8c8e240add83bb92013a7ade; skipping PDF parse and storing metadata only.
+[Ingest] No PDF for 81c3fd893e1daa5e74456e66d3bcd753b245a5c6; skipping PDF parse and storing metadata only.
+Warning: TT: invalid function id: 11
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/9a898d3ebe03a6bd46176b721bc4bb839fe1cdcb.pdf in 453ms
+[Ingest] Running pipeline for 9a898d3ebe03a6bd46176b721bc4bb839fe1cdcb
+[Ingest] Processing paper 9a898d3ebe03a6bd46176b721bc4bb839fe1cdcb 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/395bfdae59f1a5fde16213cade43d2587e4565df.pdf in 467ms
+[Ingest] Running pipeline for 395bfdae59f1a5fde16213cade43d2587e4565df
+[Ingest] Processing paper 395bfdae59f1a5fde16213cade43d2587e4565df 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/716754c9f228a4f63d8e6edb81e200d6f4ea0c3a.pdf in 486ms
+[Ingest] Running pipeline for 716754c9f228a4f63d8e6edb81e200d6f4ea0c3a
+[Ingest] Processing paper 716754c9f228a4f63d8e6edb81e200d6f4ea0c3a 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/41d3cc431b76cc769a3263e66a9b87f7b3a8fde8.pdf in 517ms
+[Ingest] Running pipeline for 41d3cc431b76cc769a3263e66a9b87f7b3a8fde8
+[Ingest] Processing paper 41d3cc431b76cc769a3263e66a9b87f7b3a8fde8 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/65902a95d5af409938b28b69808e916f8ef9e0bd.pdf in 470ms
+[Ingest] Running pipeline for 65902a95d5af409938b28b69808e916f8ef9e0bd
+[Ingest] Processing paper 65902a95d5af409938b28b69808e916f8ef9e0bd 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/fc54a8f8272688851fdd5dfbf9f1deacbe39eb30.pdf in 496ms
+[Ingest] Running pipeline for fc54a8f8272688851fdd5dfbf9f1deacbe39eb30
+[Ingest] Processing paper fc54a8f8272688851fdd5dfbf9f1deacbe39eb30 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Response length: 11813 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 11 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 10489 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 11 sections extracted 
+[Ingest] [Ingestion] Warnings: Acknowledgments and Appendix sections were omitted due to total 'other' content length constraints. 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 9667 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 12 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 10353 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 7 sections extracted 
+[Ingest] [Ingestion] Warnings: year_missing 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 14878 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 13 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 10248 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 12 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1282 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 9 entities with avg confidence 0.86 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1574 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.85 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1440 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.93 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1536 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.84 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1573 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.88 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 2252 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.89 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1001 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 8 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/9 entities, 8/8 edges (0 flagged for review) 
+[Ingest] [Pipeline] 9 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 332ms for 9 entities 
+[Ingest] [Pipeline] Node batch insert: 209ms for 9 nodes 
+[Ingest] [Pipeline] Mention batch insert: 146ms for 9 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 687ms (9 entities, 9 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 163ms for 8 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1833 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 10 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 10/10 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 206ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 192ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 133ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 532ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 125ms for 10 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1715 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 12 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 12/12 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 217ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 179ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 126ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 523ms (10 entities, 10 new nodes) 
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: 'rendering_speed',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: 'storage',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: '3dgs',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: '3dgs',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: 'grid_based_neural_field',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: 'learnable_binary_mask',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] Edge references unknown entity {
+  source: 'compact_3d_gaussian_representation',
+  target: 'r_vq',
+  decision: 'approved',
+  reason: 'ok',
+  entityMapKeys: [
+    'nerf',
+    '3dgs',
+    'storage',
+    'rendering_speed',
+    'neural_rendering',
+    'learnable_binary_mask',
+    'grid_based_neural_field',
+    'r_vq',
+    'point_nerf',
+    'mvs'
+  ]
+}
+[Ingest] [Pipeline] Edge batch insert: 123ms for 5 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1400 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 12 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 12/12 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 208ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 179ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 144ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 531ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 130ms for 12 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1553 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 12 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 12/12 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 192ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 177ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 136ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 506ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 136ms for 12 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 2056 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 12 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 12/12 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 256ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 200ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 160ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 616ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 151ms for 12 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2414 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 9 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 389ms for 9 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 389884ms 
+[Ingest] Done 65902a95d5af409938b28b69808e916f8ef9e0bd success=true
+/Users/geddydukes/Desktop/Research_agent/src/agents/runAgent.ts:214
+            reject(new Error(`Operation timed out after ${config.timeoutMs}ms`));
+                   ^
+Error: Operation timed out after 60000ms
+    at Timeout.<anonymous> (/Users/geddydukes/Desktop/Research_agent/src/agents/runAgent.ts:214:20)
+    at listOnTimeout (node:internal/timers:611:17)
+    at processTimers (node:internal/timers:546:7)

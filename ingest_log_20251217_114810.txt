@@ -1,0 +1,356 @@
+
+> research-agent-kg@1.0.0 ingest:selected
+> ts-node scripts/fetch_and_ingest.ts 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+
+[Limiter] Concurrency limits: {
+  gemini_llm: 2,
+  gemini_embed: 4,
+  semantic_scholar: 2,
+  arxiv_download: 3
+}
+[env] cwd: /Users/geddydukes/Desktop/Research_agent
+[env] GOOGLE_API_KEY present: true
+[Select] Using arXiv-only selection...
+[Select] Filtered: 16/16 papers need download (0 already exist)
+[Select] Seed: 3D Gaussian Splatting for Real-Time Radiance Field Rendering (2023) | Selected: 16 | With arxiv: 16 | To download: 16 (target 20)
+[Download] Success: 16 | Failed: 0
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2308_04079v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2403_14244v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2403_13806v2.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2406_12080v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2505_19175v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2403_17888v3.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2508_05343v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2408_03753v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2502_19318v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2310_08528v3.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2505_13215v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2501_11102v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2401_00834v3.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2403_11134v2.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2311_16493v1.pdf
+[Ingest] Parsing /Users/geddydukes/Desktop/Research_agent/downloads/2312_02155v3.pdf
+Warning: TT: undefined function: 3
+Warning: FormatError: Required "loca" table is not found
+Warning: FormatError: Required "loca" table is not found
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2403_14244v1.pdf in 727ms
+[Ingest] Running pipeline for 2403_14244v1
+[Ingest] Processing paper 2403_14244v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2408_03753v1.pdf in 730ms
+[Ingest] Running pipeline for 2408_03753v1
+[Ingest] Processing paper 2408_03753v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2403_11134v2.pdf in 769ms
+[Ingest] Running pipeline for 2403_11134v2
+[Ingest] Processing paper 2403_11134v2 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2505_13215v1.pdf in 845ms
+[Ingest] Running pipeline for 2505_13215v1
+[Ingest] Processing paper 2505_13215v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2403_13806v2.pdf in 936ms
+[Ingest] Running pipeline for 2403_13806v2
+[Ingest] Processing paper 2403_13806v2 
+Warning: TT: undefined function: 3
+Warning: TT: undefined function: 3
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2505_19175v1.pdf in 954ms
+[Ingest] Running pipeline for 2505_19175v1
+[Ingest] Processing paper 2505_19175v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2312_02155v3.pdf in 916ms
+[Ingest] Running pipeline for 2312_02155v3
+[Ingest] Processing paper 2312_02155v3 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2310_08528v3.pdf in 973ms
+[Ingest] Running pipeline for 2310_08528v3
+[Ingest] Processing paper 2310_08528v3 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2308_04079v1.pdf in 1095ms
+[Ingest] Running pipeline for 2308_04079v1
+[Ingest] Processing paper 2308_04079v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2403_17888v3.pdf in 1020ms
+[Ingest] Running pipeline for 2403_17888v3
+[Ingest] Processing paper 2403_17888v3 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2401_00834v3.pdf in 989ms
+[Ingest] Running pipeline for 2401_00834v3
+[Ingest] Processing paper 2401_00834v3 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2406_12080v1.pdf in 1066ms
+[Ingest] Running pipeline for 2406_12080v1
+[Ingest] Processing paper 2406_12080v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2311_16493v1.pdf in 991ms
+[Ingest] Running pipeline for 2311_16493v1
+[Ingest] Processing paper 2311_16493v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2501_11102v1.pdf in 1058ms
+[Ingest] Running pipeline for 2501_11102v1
+[Ingest] Processing paper 2501_11102v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2508_05343v1.pdf in 1083ms
+[Ingest] Running pipeline for 2508_05343v1
+[Ingest] Processing paper 2508_05343v1 
+[Parser] pdf-parse confidence 1.00
+[Parser] Parsed /Users/geddydukes/Desktop/Research_agent/downloads/2502_19318v1.pdf in 1126ms
+[Ingest] Running pipeline for 2502_19318v1
+[Ingest] Processing paper 2502_19318v1 
+[Ingest] [Pipeline] Paper 2505_19175v1 already exists, skipping 
+[Ingest] Done 2505_19175v1 success=true
+[Ingest] [Pipeline] Paper 2403_14244v1 already exists, skipping 
+[Ingest] Done 2403_14244v1 success=true
+[Ingest] [Pipeline] Paper 2502_19318v1 already exists, skipping 
+[Ingest] Done 2502_19318v1 success=true
+[Ingest] [Pipeline] Paper 2406_12080v1 already exists, skipping 
+[Ingest] Done 2406_12080v1 success=true
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Pipeline] Paper 2403_17888v3 already exists, skipping 
+[Ingest] Done 2403_17888v3 success=true
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Pipeline] Paper 2508_05343v1 already exists, skipping 
+[Ingest] Done 2508_05343v1 success=true
+[Ingest] [Pipeline] Paper 2308_04079v1 already exists, skipping 
+[Ingest] Done 2308_04079v1 success=true
+[Ingest] [Pipeline] Paper 2310_08528v3 already exists, skipping 
+[Ingest] Done 2310_08528v3 success=true
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Pipeline] Paper 2403_13806v2 already exists, skipping 
+[Ingest] Done 2403_13806v2 success=true
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Ingestion] Starting... 
+[Ingest] [Pipeline] Paper 2408_03753v1 already exists, skipping 
+[Ingest] Done 2408_03753v1 success=true
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 24000, timeoutMs: 180000) 
+[Ingest] [Ingestion] Response length: 14298 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 12 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 14577 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 10 sections extracted 
+[Ingest] [Ingestion] Warnings: incomplete_content 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 9841 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 9 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 10949 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 11 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 8828 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 8 sections extracted 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [Ingestion] Response length: 10312 chars 
+[Ingest] [Ingestion] Success on attempt 1 
+[Ingest] [Ingestion] Cached result 
+[Ingest] [Ingestion] Success: 9 sections extracted 
+[Ingest] [Ingestion] Warnings: year_missing; authors_extracted_from_text 
+[Ingest] [EntityExtraction] Starting... 
+[Ingest] [EntityExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1573 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.90 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1579 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.89 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1988 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.84 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1597 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.89 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1372 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 9 entities with avg confidence 0.84 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1480 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 11 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 11/11 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 387ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 200ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 159ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 747ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 166ms for 11 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [EntityExtraction] Response length: 1452 chars 
+[Ingest] [EntityExtraction] Success on attempt 1 
+[Ingest] [EntityExtraction] Cached result 
+[Ingest] [EntityExtraction] Extracted 10 entities with avg confidence 0.88 
+[Ingest] [RelationshipCoreExtraction] Starting... 
+[Ingest] [RelationshipCoreExtraction] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1493 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 11 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 11/11 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 238ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 203ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 138ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 579ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 161ms for 11 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1410 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 11 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 11/11 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 224ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 342ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 127ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 693ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 135ms for 11 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1320 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 10 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 10/10 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 321ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 201ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 151ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 673ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 129ms for 10 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipCoreExtraction] Response length: 1315 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 11 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/9 entities, 11/11 edges (0 flagged for review) 
+[Ingest] [Pipeline] 9 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 196ms for 9 entities 
+[Ingest] [Pipeline] Node batch insert: 266ms for 9 nodes 
+[Ingest] [Pipeline] Mention batch insert: 131ms for 9 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 593ms (9 entities, 9 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 122ms for 11 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2716 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 11 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 400ms for 11 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/5M, entities: 0H/5M 
+[Ingest] [Pipeline] Total time: 326825ms 
+[Ingest] Done 2501_11102v1 success=true
+[Ingest] [RelationshipCoreExtraction] Response length: 1552 chars 
+[Ingest] [RelationshipCoreExtraction] Success on attempt 1 
+[Ingest] [RelationshipCoreExtraction] Cached result 
+[Ingest] [RelationshipCoreExtraction] Extracted 11 relationships 
+[Ingest] [Validation] Starting (deterministic rules)... 
+[Ingest] [Validation] Approved: 0/10 entities, 11/11 edges (0 flagged for review) 
+[Ingest] [Pipeline] 10 entities flagged for review 
+[Ingest] [Pipeline] Entity dedupe lookup: 207ms for 10 entities 
+[Ingest] [Pipeline] Node batch insert: 195ms for 10 nodes 
+[Ingest] [Pipeline] Mention batch insert: 132ms for 10 mentions 
+[Ingest] [Pipeline] Entity dedupe total: 536ms (10 entities, 10 new nodes) 
+[Ingest] [Pipeline] Edge batch insert: 132ms for 11 edges 
+[Ingest] [RelationshipEvidenceEnrichment] Starting... 
+[Ingest] [RelationshipEvidenceEnrichment] Attempt 1/3 (model: gemini-2.5-flash, maxOutputTokens: 16000, timeoutMs: 60000) 
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2200 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 10 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 452ms for 10 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 346490ms 
+[Ingest] Done 2403_11134v2 success=true
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 3158 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 11 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 472ms for 11 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 352271ms 
+[Ingest] Done 2312_02155v3 success=true
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2688 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 10 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 345ms for 10 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 368176ms 
+[Ingest] Done 2311_16493v1 success=true
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2594 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 11 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 395ms for 11 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 374654ms 
+[Ingest] Done 2505_13215v1 success=true
+[Ingest] [RelationshipEvidenceEnrichment] Response length: 2722 chars 
+[Ingest] [RelationshipEvidenceEnrichment] Success on attempt 1 
+[Ingest] [RelationshipEvidenceEnrichment] Cached result 
+[Ingest] [RelationshipEvidenceEnrichment] Enriched 9 edges with evidence 
+[Ingest] [Pipeline] Edge evidence batch update: 382ms for 9 edges 
+[Ingest] [Reasoning] Skipped (disabled or batched) 
+[Ingest] [Pipeline] Cache: sections: 0H/6M, relationship_candidates: 0H/6M, entities: 0H/6M 
+[Ingest] [Pipeline] Total time: 397925ms 
+[Ingest] Done 2401_00834v3 success=true
+[Done] Ingested 16 papers. Seed: 3D Gaussian Splatting for Real-Time Radiance Field Rendering
+[Ingest] [ReasoningBatch] Starting batch 12bfe45a-27d2-47df-96d5-e0d3f69be112 
+[Ingest] [buildSubgraph] Initial fetch: 1042ms for 16 papers 
+[Ingest] [buildSubgraph] Total fetch: 1262ms (168 nodes, 368 edges, 16 papers) 
+[Ingest] [ReasoningBatch] Subgraph: 168 nodes, 368 edges, scope: 16 papers at depth 2 
+[Ingest] [Reasoning] Attempt 1/3 (model: gemini-2.5-pro, maxOutputTokens: 16000, timeoutMs: 120000) 
+[Ingest] [Reasoning] Response length: 2606 chars 
+[Ingest] [Reasoning] Success on attempt 1 
+[Ingest] [Reasoning] Cached result 
+[Ingest] [ReasoningBatch] Generated 5 insights for batch 12bfe45a-27d2-47df-96d5-e0d3f69be112 
+[ReasoningBatch] Completed

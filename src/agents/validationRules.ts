@@ -53,12 +53,20 @@ export function validateEntitiesAndEdges(
   entities: EntityOutput['entities'],
   edges: EdgeOutput['edges']
 ): ValidationOutput {
+  const canonicalCache = new Map<string, string>();
+  const getCanonical = (s: string): string => {
+    if (!canonicalCache.has(s)) {
+      canonicalCache.set(s, canonicalize(s));
+    }
+    return canonicalCache.get(s)!;
+  };
+
   const canonicalEntityMap = new Map<string, EntityOutput['entities'][0]>();
   const canonicalToOriginal = new Map<string, string>();
   const counts = new Map<string, number>();
 
   for (const ent of entities) {
-    const canonicalKey = canonicalize(ent.canonical_name);
+    const canonicalKey = getCanonical(ent.canonical_name);
     if (!canonicalEntityMap.has(canonicalKey)) {
       canonicalEntityMap.set(canonicalKey, ent);
       canonicalToOriginal.set(canonicalKey, ent.canonical_name);
@@ -68,7 +76,7 @@ export function validateEntitiesAndEdges(
 
   const entitiesByType = new Map<string, Array<{ ent: EntityOutput['entities'][0]; canonicalKey: string }>>();
   for (const ent of Array.from(canonicalEntityMap.values())) {
-    const canonicalKey = canonicalize(ent.canonical_name);
+    const canonicalKey = getCanonical(ent.canonical_name);
     if (!entitiesByType.has(ent.type)) {
       entitiesByType.set(ent.type, []);
     }
@@ -89,7 +97,7 @@ export function validateEntitiesAndEdges(
   }
 
   const entityDecisions: EntityDecision[] = Array.from(canonicalEntityMap.values()).map((ent) => {
-    const canonicalKey = canonicalize(ent.canonical_name);
+    const canonicalKey = getCanonical(ent.canonical_name);
     const original = ent.original_confidence;
     const mentionCount = counts.get(canonicalKey) || 1;
     let adjusted = original;
@@ -132,8 +140,8 @@ export function validateEntitiesAndEdges(
   });
 
   const edgeDecisions: EdgeDecision[] = edges.map((edge) => {
-    const sourceCanonical = canonicalize(edge.source_canonical_name);
-    const targetCanonical = canonicalize(edge.target_canonical_name);
+    const sourceCanonical = getCanonical(edge.source_canonical_name);
+    const targetCanonical = getCanonical(edge.target_canonical_name);
 
     if (sourceCanonical === targetCanonical) {
       return {

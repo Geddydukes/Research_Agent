@@ -35,9 +35,16 @@ describe('buildSubgraph', () => {
                 }
                 if (fields === '*') {
                   if (mockResult.in.mock.calls.length > 0 || mockResult.or.mock.calls.length > 0) {
-                    const lastCall = mockResult.in.mock.calls[mockResult.in.mock.calls.length - 1] || mockResult.or.mock.calls[mockResult.or.mock.calls.length - 1];
-                    if (lastCall && lastCall[0] === 'id') {
-                      return Promise.resolve(fn({ data: mockEdges }));
+                    const inCalls = mockResult.in.mock.calls;
+                    const orCalls = mockResult.or.mock.calls;
+                    const lastInCall = inCalls.length > 0 ? inCalls[inCalls.length - 1] : null;
+                    const lastOrCall = orCalls.length > 0 ? orCalls[orCalls.length - 1] : null;
+                    const lastCall = lastInCall || lastOrCall;
+                    if (lastCall && Array.isArray(lastCall) && lastCall.length > 0) {
+                      const firstArg = (lastCall as any[])[0];
+                      if (firstArg === 'id') {
+                        return Promise.resolve(fn({ data: mockEdges }));
+                      }
                     }
                   }
                   return Promise.resolve(fn({ data: mockNodes }));

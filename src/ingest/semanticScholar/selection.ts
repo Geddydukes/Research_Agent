@@ -31,6 +31,7 @@ type SelectionConfig = {
   embeddingsModel: string;
   resolveArxivByTitle: boolean;
   arxivTitleThreshold: number;
+  seedSearchLimit: number;
 };
 
 export const defaultSelectionConfig: SelectionConfig = {
@@ -50,6 +51,7 @@ export const defaultSelectionConfig: SelectionConfig = {
   embeddingsModel: 'gemini-embedding-001',
   resolveArxivByTitle: true,
   arxivTitleThreshold: 0.6,
+  seedSearchLimit: 20,
 };
 
 function yearWeight(year?: number): number {
@@ -95,33 +97,57 @@ export async function selectCorpus(params: {
   const referenceLimit = Number(process.env.SS_REFERENCE_LIMIT || '100');
   const keywordLimit = Number(process.env.SS_KEYWORD_LIMIT || `${cfg.keywordLimitPerQuery}`);
 
-  const seedMatches = await withRetry(() => ss.searchPaperByTitle(params.seedTitle, 8));
+  console.log('[Selection] Searching for seed paper:', params.seedTitle);
+  const seedMatches = await withRetry(() => {
+    console.log('[Selection] Calling ss.searchPaperByTitle with limit:', cfg.seedSearchLimit);
+    return ss.searchPaperByTitle(params.seedTitle, cfg.seedSearchLimit);
+  });
+  console.log('[Selection] Seed matches found:', seedMatches.length);
   if (seedMatches.length === 0) throw new Error('No seed paper matches found');
   const seed = seedMatches
     .filter(isPaperUsable)
     .sort((a, b) => (b.citationCount ?? 0) - (a.citationCount ?? 0))[0];
   if (!seed) throw new Error('Seed paper missing required fields (title, abstract, year)');
+  console.log('[Selection] Selected seed paper:', seed.paperId, seed.title);
 
   let citing: SSPaper[] = [];
   try {
+    console.log('[Selection] Fetching citations for seed paper:', seed.paperId, 'limit:', citationLimit);
+    const startTime = Date.now();
     citing = (await withRetry(() => ss.getCitations(seed.paperId, citationLimit, 0))).filter(isPaperUsable);
+    const duration = Date.now() - startTime;
+    console.log('[Selection] Citations fetched:', citing.length, `(took ${duration}ms)`);
   } catch (err) {
-    console.warn('[Selection] citations fetch failed, continuing without citations', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[Selection] citations fetch failed, continuing without citations', errMsg);
+    if (err instanceof Error && err.stack) {
+      console.warn('[Selection] Error stack:', err.stack);
+    }
     citing = [];
   }
 
   let refs: SSPaper[] = [];
   try {
+    console.log('[Selection] Fetching references for seed paper:', seed.paperId, 'limit:', referenceLimit);
+    const startTime = Date.now();
     refs = (await withRetry(() => ss.getReferences(seed.paperId, referenceLimit, 0))).filter(isPaperUsable);
+    const duration = Date.now() - startTime;
+    console.log('[Selection] References fetched:', refs.length, `(took ${duration}ms)`);
   } catch (err) {
-    console.warn('[Selection] references fetch failed, continuing without references', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[Selection] references fetch failed, continuing without references', errMsg);
+    if (err instanceof Error && err.stack) {
+      console.warn('[Selection] Error stack:', err.stack);
+    }
     refs = [];
   }
 
   const keywordResults: SSPaper[] = [];
   for (const q of cfg.keywordQueries) {
     try {
+      console.log('[Selection] Keyword search:', q, 'limit:', keywordLimit);
       const results = (await withRetry(() => ss.keywordSearch(q, keywordLimit))).filter(isPaperUsable);
+      console.log('[Selection] Keyword results for', q, ':', results.length);
       keywordResults.push(...results);
     } catch (err) {
       console.warn(`[Selection] keyword search failed for "${q}", continuing`, err);
@@ -167,20 +193,20 @@ export async function selectCorpus(params: {
   const semanticPool = withSim
     .filter((x) => x.sim >= cfg.semanticThreshold)
     .sort((a, b) => b.sim - a.sim);
-  let semanticPicked = 0;
+  // Select ALL papers that meet the semantic threshold (no limit)
   for (const x of semanticPool) {
-    if (semanticPicked >= cfg.semanticTopK) break;
     if (selectedMap.has(x.paper.paperId)) continue;
     selectedMap.set(x.paper.paperId, {
       ...x.paper,
       selection_reason: 'semantic',
       sim_to_seed: x.sim,
     });
-    semanticPicked++;
   }
 
   const selectedIds = new Set(selectedMap.keys());
-  const linkedIds = new Set<string>([...citing.map((p) => p.paperId), ...refs.map((p) => p.paperId)]);
+  const linkedIds = new Set<string>();
+  for (const p of citing) linkedIds.add(p.paperId);
+  for (const p of refs) linkedIds.add(p.paperId);
   const temporalCandidates = withSim
     .filter((x) => x.paper.year === 2024 || x.paper.year === 2025)
     .filter((x) => x.sim >= cfg.temporalThreshold || linkedIds.has(x.paper.paperId));
@@ -206,31 +232,8 @@ export async function selectCorpus(params: {
     temporalPicked++;
   }
 
-  const desiredTotal = 1 + cfg.citationTopK + cfg.semanticTopK + cfg.temporalTopK;
-  if (selectedMap.size < desiredTotal) {
-    for (const x of semanticPool) {
-      if (selectedMap.size >= desiredTotal) break;
-      if (selectedMap.has(x.paper.paperId)) continue;
-      selectedMap.set(x.paper.paperId, {
-        ...x.paper,
-        selection_reason: 'backfill_semantic',
-        sim_to_seed: x.sim,
-      });
-    }
-
-    if (selectedMap.size < desiredTotal) {
-      for (const x of temporalRanked) {
-        if (selectedMap.size >= desiredTotal) break;
-        if (selectedMap.has(x.paper.paperId)) continue;
-        selectedMap.set(x.paper.paperId, {
-          ...x.paper,
-          selection_reason: 'backfill_temporal',
-          sim_to_seed: x.sim,
-          temporal_score: x.temporalScore,
-        });
-      }
-    }
-  }
+  // No backfill needed since semantic selection is unlimited
+  // All papers meeting thresholds are already selected
 
   const selected = Array.from(selectedMap.values());
 

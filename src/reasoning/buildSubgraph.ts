@@ -97,39 +97,49 @@ export async function buildSubgraph(
     }
   }
 
+  const chunkSize = Number(process.env.REASONING_CHUNK_SIZE || '1000');
+  
   for (let d = 1; d <= depth; d++) {
     if (nodeIds.size === 0) break;
 
     const nodeIdArray = Array.from(nodeIds);
     if (nodeIdArray.length === 0) break;
 
-    const [sourceEdgesResult, targetEdgesResult] = await Promise.all([
+    const chunks: number[][] = [];
+    for (let i = 0; i < nodeIdArray.length; i += chunkSize) {
+      chunks.push(nodeIdArray.slice(i, i + chunkSize));
+    }
+
+    const sourceEdgePromises = chunks.map((chunk) =>
       db.client
         .from('edges')
         .select('source_node_id, target_node_id, id')
-        .in('source_node_id', nodeIdArray)
-        .then((r) => (r.data || []) as Array<{ source_node_id: number; target_node_id: number; id: number }>),
+        .in('source_node_id', chunk)
+        .then((r) => (r.data || []) as Array<{ source_node_id: number; target_node_id: number; id: number }>)
+    );
+    
+    const targetEdgePromises = chunks.map((chunk) =>
       db.client
         .from('edges')
         .select('source_node_id, target_node_id, id')
-        .in('target_node_id', nodeIdArray)
-        .then((r) => (r.data || []) as Array<{ source_node_id: number; target_node_id: number; id: number }>),
+        .in('target_node_id', chunk)
+        .then((r) => (r.data || []) as Array<{ source_node_id: number; target_node_id: number; id: number }>)
+    );
+
+    const [sourceEdgesResults, targetEdgesResults] = await Promise.all([
+      Promise.all(sourceEdgePromises),
+      Promise.all(targetEdgePromises),
     ]);
 
-    const sourceEdges = sourceEdgesResult;
-    const targetEdges = targetEdgesResult;
-
+    const sourceEdges = sourceEdgesResults.flat();
+    const targetEdges = targetEdgesResults.flat();
     const allConnected = [...sourceEdges, ...targetEdges];
-    const seenEdgeIds = new Set<number>();
 
     for (const e of allConnected) {
-      if (!seenEdgeIds.has(e.id)) {
-        seenEdgeIds.add(e.id);
-        if (!edgeIds.has(e.id)) {
-          edgeIds.add(e.id);
-          nodeIds.add(e.source_node_id);
-          nodeIds.add(e.target_node_id);
-        }
+      if (!edgeIds.has(e.id)) {
+        edgeIds.add(e.id);
+        nodeIds.add(e.source_node_id);
+        nodeIds.add(e.target_node_id);
       }
     }
   }
@@ -143,27 +153,54 @@ export async function buildSubgraph(
   const edgeIdArray = Array.from(edgeIds);
   const paperIdArray = Array.from(paperIds);
 
-  const [nodesResult, edgesResult, papersResult, totalPapersResult] = await Promise.all([
+  const nodeChunks: number[][] = [];
+  for (let i = 0; i < nodeIdArray.length; i += chunkSize) {
+    nodeChunks.push(nodeIdArray.slice(i, i + chunkSize));
+  }
+
+  const edgeChunks: number[][] = [];
+  for (let i = 0; i < edgeIdArray.length; i += chunkSize) {
+    edgeChunks.push(edgeIdArray.slice(i, i + chunkSize));
+  }
+
+  const paperChunks: string[][] = [];
+  for (let i = 0; i < paperIdArray.length; i += chunkSize) {
+    paperChunks.push(paperIdArray.slice(i, i + chunkSize));
+  }
+
+  const [fetchedNodes, fetchedEdges, fetchedPapers, totalPapersResult] = await Promise.all([
     nodeIdArray.length > 0
-      ? db.client
-          .from('nodes')
-          .select('*')
-          .in('id', nodeIdArray)
-          .then((r) => (r.data || []) as any[])
+      ? Promise.all(
+          nodeChunks.map((chunk) =>
+            db.client
+              .from('nodes')
+              .select('*')
+              .in('id', chunk)
+              .then((r) => (r.data || []) as any[])
+          )
+        ).then((results) => results.flat())
       : Promise.resolve([]),
     edgeIdArray.length > 0
-      ? db.client
-          .from('edges')
-          .select('*')
-          .in('id', edgeIdArray)
-          .then((r) => (r.data || []) as any[])
+      ? Promise.all(
+          edgeChunks.map((chunk) =>
+            db.client
+              .from('edges')
+              .select('*')
+              .in('id', chunk)
+              .then((r) => (r.data || []) as any[])
+          )
+        ).then((results) => results.flat())
       : Promise.resolve([]),
     paperIdArray.length > 0
-      ? db.client
-          .from('papers')
-          .select('paper_id, title, year')
-          .in('paper_id', paperIdArray)
-          .then((r) => (r.data || []) as Array<{ paper_id: string; title: string | null; year: number | null }>)
+      ? Promise.all(
+          paperChunks.map((chunk) =>
+            db.client
+              .from('papers')
+              .select('paper_id, title, year')
+              .in('paper_id', chunk)
+              .then((r) => (r.data || []) as Array<{ paper_id: string; title: string | null; year: number | null }>)
+          )
+        ).then((results) => results.flat())
       : Promise.resolve([]),
     db.client
       .from('papers')
@@ -171,9 +208,9 @@ export async function buildSubgraph(
       .then((r) => r.count || 0),
   ]);
 
-  const nodes = nodesResult;
-  const edges = edgesResult;
-  const papers = papersResult;
+  const nodes = fetchedNodes;
+  const edges = fetchedEdges;
+  const papers = fetchedPapers;
 
   const totalFetchDuration = Date.now() - fetchStart;
   if (logger) {

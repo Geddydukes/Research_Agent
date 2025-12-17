@@ -7,56 +7,30 @@ describe('Entity deduplication and batch operations', () => {
 
   beforeEach(() => {
     mockDb = {
-      findNodesByCanonicalNames: jest.fn(),
-      insertNodes: jest.fn(),
-      insertEntityMentions: jest.fn(),
+      findNodesByCanonicalNames: jest.fn() as jest.MockedFunction<DatabaseClient['findNodesByCanonicalNames']>,
+      insertNodes: jest.fn() as jest.MockedFunction<DatabaseClient['insertNodes']>,
+      insertEntityMentions: jest.fn() as jest.MockedFunction<DatabaseClient['insertEntityMentions']>,
     };
   });
 
   it('batches node lookups instead of N+1 queries', async () => {
-    const validatedEntities: ValidationOutput['validated_entities'] = [
-      {
-        canonical_name: 'Entity A',
-        type: 'Entity',
-        decision: 'approved',
-        original_confidence: 0.8,
-        adjusted_confidence: 0.8,
-        reason: 'ok',
-      },
-      {
-        canonical_name: 'Entity B',
-        type: 'Entity',
-        decision: 'approved',
-        original_confidence: 0.9,
-        adjusted_confidence: 0.9,
-        reason: 'ok',
-      },
-      {
-        canonical_name: 'Entity C',
-        type: 'Method',
-        decision: 'approved',
-        original_confidence: 0.7,
-        adjusted_confidence: 0.7,
-        reason: 'ok',
-      },
-    ];
 
     // Mock: Entity A exists, Entity B and Entity C are new
-    (mockDb.findNodesByCanonicalNames as jest.Mock).mockResolvedValue(
-      new Map([
+    (mockDb.findNodesByCanonicalNames as jest.MockedFunction<DatabaseClient['findNodesByCanonicalNames']>).mockResolvedValue(
+      new Map<string, any>([
         [
           'entity_a|Entity',
-          { id: 1, canonical_name: 'entity_a', type: 'Entity', metadata: null },
+          { id: 1, canonical_name: 'entity_a', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
         ],
       ])
     );
 
-    (mockDb.insertNodes as jest.Mock).mockResolvedValue([
-      { id: 2, canonical_name: 'entity_b', type: 'Entity', metadata: null },
-      { id: 3, canonical_name: 'entity_c', type: 'Method', metadata: null },
+    (mockDb.insertNodes as jest.MockedFunction<DatabaseClient['insertNodes']>).mockResolvedValue([
+      { id: 2, canonical_name: 'entity_b', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
+      { id: 3, canonical_name: 'entity_c', type: 'Method', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
     ]);
 
-    (mockDb.insertEntityMentions as jest.Mock).mockResolvedValue([]);
+    (mockDb.insertEntityMentions as jest.MockedFunction<DatabaseClient['insertEntityMentions']>).mockResolvedValue([]);
 
     const pairs = [
       { canonical_name: 'entity_a', type: 'Entity' },
@@ -90,10 +64,10 @@ describe('Entity deduplication and batch operations', () => {
   });
 
   it('ensures idempotence: rerunning same paper does not create duplicates', async () => {
-    (mockDb.findNodesByCanonicalNames as jest.Mock).mockResolvedValue(
-      new Map([
-        ['entity_a|Entity', { id: 1, canonical_name: 'entity_a', type: 'Entity' }],
-        ['entity_b|Entity', { id: 2, canonical_name: 'entity_b', type: 'Entity' }],
+    (mockDb.findNodesByCanonicalNames as jest.MockedFunction<DatabaseClient['findNodesByCanonicalNames']>).mockResolvedValue(
+      new Map<string, any>([
+        ['entity_a|Entity', { id: 1, canonical_name: 'entity_a', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' }],
+        ['entity_b|Entity', { id: 2, canonical_name: 'entity_b', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' }],
       ])
     );
 

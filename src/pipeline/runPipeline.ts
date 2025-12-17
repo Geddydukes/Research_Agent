@@ -37,6 +37,7 @@ import {
   getCacheStats,
   resetCacheStats,
 } from '../cache/derived';
+import { buildSubgraph } from '../reasoning/buildSubgraph';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -160,7 +161,7 @@ async function insertEdges(
   sourcePaperId?: string
 ): Promise<Map<string, number>> {
   const edgesToInsert = [];
-  const edgeIdByKey = new Map<string, number>();
+  const edgeKeys: string[] = [];
 
   for (const validatedEdge of validatedEdges) {
     if (validatedEdge.decision === 'rejected') {
@@ -182,6 +183,7 @@ async function insertEdges(
     }
 
     const key = `${validatedEdge.source_canonical_name}::${validatedEdge.relationship_type}::${validatedEdge.target_canonical_name}`;
+    edgeKeys.push(key);
     const evidenceData = evidenceMap.get(key);
 
     edgesToInsert.push({
@@ -203,20 +205,11 @@ async function insertEdges(
     });
   }
 
+  const edgeIdByKey = new Map<string, number>();
   if (edgesToInsert.length > 0) {
     const inserted = await db.insertEdges(edgesToInsert);
-    let insertIdx = 0;
-    for (const ve of validatedEdges) {
-      if (ve.decision === 'rejected') continue;
-      const sourceId = entityMap.get(ve.source_canonical_name);
-      const targetId = entityMap.get(ve.target_canonical_name);
-      if (!sourceId || !targetId) continue;
-      
-      if (insertIdx < inserted.length) {
-        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
-        edgeIdByKey.set(key, inserted[insertIdx].id);
-        insertIdx++;
-      }
+    for (let i = 0; i < inserted.length; i++) {
+      edgeIdByKey.set(edgeKeys[i]!, inserted[i]!.id);
     }
   }
 
@@ -533,38 +526,41 @@ export async function runPipeline(
 
     if (approvedEdges.length > 0) {
       logger.info('[RelationshipEvidenceEnrichment] Starting...');
-      const relationshipInputs = approvedEdges.map((ve) => {
-        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
-        return {
-          edge_key: key,
-          source_canonical_name: ve.source_canonical_name,
-          target_canonical_name: ve.target_canonical_name,
-          relationship_type: ve.relationship_type,
-        };
-      });
+      
+      const approvedEdgeKeys = approvedEdges.map((ve) => 
+        `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`
+      );
+      
+      const relationshipInputs = approvedEdges.map((ve, idx) => ({
+        edge_key: approvedEdgeKeys[idx]!,
+        source_canonical_name: ve.source_canonical_name,
+        target_canonical_name: ve.target_canonical_name,
+        relationship_type: ve.relationship_type,
+      }));
+
+      const sectionsForEvidence = ingested.sections.map((s, idx) => ({
+        section_type: s.section_type,
+        content: s.content,
+        part_index: s.part_index ?? idx,
+      }));
 
       const evidenceInput = {
         paper_id: ingested.paper_id,
-        sections: ingested.sections.map((s, idx) => ({
-          section_type: s.section_type,
-          content: s.content,
-          part_index: s.part_index ?? idx,
-        })),
+        sections: sectionsForEvidence,
         relationships: relationshipInputs,
       };
+      
+      const evidenceInputStr = JSON.stringify(evidenceInput);
+      
       const evidenceData = await runAgent<RelationshipEvidenceOutput>(
         'RelationshipEvidenceEnrichment',
         RELATIONSHIP_EVIDENCE_PROMPT,
-        JSON.stringify(evidenceInput),
+        evidenceInputStr,
         RelationshipEvidenceSchema,
         { ...AGENT_CONFIG, timeoutMs: 60000 },
         logger,
         {
-          input: {
-            paper_id: ingested.paper_id,
-            sections: ingested.sections,
-            relationships: relationshipInputs,
-          },
+          input: evidenceInput,
           promptVersion: PROMPT_VERSIONS.relationshipExtraction,
           schemaVersion: SCHEMA_VERSIONS.relationshipExtraction,
           provider: 'gemini',
@@ -594,8 +590,9 @@ export async function runPipeline(
         provenance: Record<string, unknown>;
       }> = [];
       
-      for (const ve of approvedEdges) {
-        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
+      for (let i = 0; i < approvedEdges.length; i++) {
+        const ve = approvedEdges[i]!;
+        const key = approvedEdgeKeys[i]!;
         const edgeId = edgeIdByKey.get(key);
         const evData = evidenceMap.get(key);
         if (edgeId && evData) {
@@ -628,29 +625,23 @@ export async function runPipeline(
       logger.info('[Reasoning] Skipped (disabled or batched)');
     } else {
       logger.info('[Reasoning] Starting...');
-      const graphData = await dbClient.getGraphData();
-      logger.info(
-        `[Reasoning] Graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`
+      const useFullGraph = process.env.REASON_FULL_GRAPH === '1';
+      if (!useFullGraph) {
+        logger.info('[Reasoning] Using subgraph fetch (set REASON_FULL_GRAPH=1 to use full corpus)');
+      }
+      
+      const depth = Number(process.env.REASONING_DEPTH || '2');
+      const { input: reasoningInput, scope } = await buildSubgraph(
+        dbClient,
+        [ingested.paper_id],
+        depth,
+        useFullGraph,
+        logger
       );
 
-      const reasoningInput = {
-        nodes: graphData.nodes.map((n) => ({
-          id: n.id.toString(),
-          type: n.type,
-          canonical_name: n.canonical_name,
-          metadata: n.metadata,
-        })),
-        edges: graphData.edges.map((e) => ({
-          id: e.id.toString(),
-          source_node_id: e.source_node_id.toString(),
-          target_node_id: e.target_node_id.toString(),
-          relationship_type: e.relationship_type,
-          confidence: e.confidence,
-          evidence: e.evidence || '',
-        })),
-        papers: [],
-        total_papers_in_corpus: 1,
-      };
+      logger.info(
+        `[Reasoning] Subgraph: ${reasoningInput.nodes.length} nodes, ${reasoningInput.edges.length} edges, scope: ${scope.paper_ids.length} papers at depth ${scope.depth}`
+      );
 
       const reasoningInputStr = JSON.stringify(reasoningInput);
       const inputSize = reasoningInputStr.length;
@@ -689,6 +680,10 @@ export async function runPipeline(
             meta: {
               batch_id: `per-paper-${ingested.paper_id}`,
               graph_snapshot_hash: graphSnapshotHash,
+              scope: {
+                paper_ids: scope.paper_ids,
+                depth: scope.depth,
+              },
             },
           },
           confidence: ins.confidence,

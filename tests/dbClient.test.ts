@@ -21,10 +21,10 @@ describe('DatabaseClient edge query fixes', () => {
 
   describe('getEdgesForPaper', () => {
     it('uses OR logic to match edges where either source OR target is in node set', async () => {
-      dbClient.getNodesForPaper = jest.fn().mockResolvedValue([
-        { id: 1, type: 'Entity', canonical_name: 'node1' },
-        { id: 2, type: 'Entity', canonical_name: 'node2' },
-        { id: 3, type: 'Entity', canonical_name: 'node3' },
+      (dbClient as any).getNodesForPaper = jest.fn<() => Promise<any[]>>().mockResolvedValue([
+        { id: 1, type: 'Entity', canonical_name: 'node1', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
+        { id: 2, type: 'Entity', canonical_name: 'node2', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
+        { id: 3, type: 'Entity', canonical_name: 'node3', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
       ]);
 
       const mockEdges = [
@@ -51,7 +51,7 @@ describe('DatabaseClient edge query fixes', () => {
     });
 
     it('handles empty node sets', async () => {
-      dbClient.getNodesForPaper = jest.fn().mockResolvedValue([]);
+      (dbClient as any).getNodesForPaper = jest.fn<() => Promise<any[]>>().mockResolvedValue([]);
 
       const result = await dbClient.getEdgesForPaper('paper1');
 

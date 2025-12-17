@@ -63,19 +63,18 @@ export async function downloadPdfsForSelected(
   limit = papers.length
 ): Promise<DownloadResult[]> {
   const subset = papers.slice(0, limit);
-  const results: DownloadResult[] = [];
-  for (const p of subset) {
+  const downloadPromises = subset.map(async (p) => {
     try {
-      results.push(await downloadPdfForPaper(p, destDir));
+      return await downloadPdfForPaper(p, destDir);
     } catch (error) {
-      results.push({
+      return {
         paperId: p.paperId,
         ok: false,
         reason: error instanceof Error ? error.message : String(error),
-      });
+      } as DownloadResult;
     }
-  }
-  return results;
+  });
+  return Promise.all(downloadPromises);
 }
 
 

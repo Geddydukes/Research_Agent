@@ -4,18 +4,18 @@ import * as cache from '../src/utils/cache';
 import { limit } from '../src/utils/limiter';
 
 jest.mock('../src/utils/cache', () => ({
-  buildCacheKey: jest.fn((parts) => ({
+  buildCacheKey: jest.fn((parts: any) => ({
     key: `cache-key-${parts.input?.text || 'unknown'}`,
     inputHash: `hash-${parts.input?.text || 'unknown'}`,
   })),
-  buildCacheEntry: jest.fn((meta, value) => ({ meta, value })),
+  buildCacheEntry: jest.fn((meta: any, value: any) => ({ meta, value })),
   readCache: jest.fn(),
   writeCache: jest.fn(),
-  stableStringify: jest.fn((v) => JSON.stringify(v)),
+  stableStringify: jest.fn((v: any) => JSON.stringify(v)),
 }));
 
 jest.mock('../src/utils/limiter', () => ({
-  limit: jest.fn(async (lane, fn) => fn()),
+  limit: jest.fn(async (_lane: string, fn: () => Promise<any>) => fn()),
 }));
 
 describe('EmbeddingsClient batching', () => {
@@ -34,13 +34,13 @@ describe('EmbeddingsClient batching', () => {
       getGenerativeModel: jest.fn(() => mockModel),
     };
 
-    (limit as jest.Mock).mockImplementation(async (lane, fn) => fn());
+    (limit as jest.MockedFunction<typeof limit>).mockImplementation(async (_lane: string, fn: () => Promise<any>) => fn());
   });
 
   it('preserves order of results', async () => {
     const texts = ['text1', 'text2', 'text3'];
     
-    (cache.readCache as jest.Mock).mockResolvedValue(null);
+    (cache.readCache as jest.MockedFunction<typeof cache.readCache>).mockResolvedValue(null);
     
     mockModel.embedContent.mockResolvedValue({
       embedding: { values: [1, 2, 3] },
@@ -55,9 +55,9 @@ describe('EmbeddingsClient batching', () => {
   it('checks cache before calling provider', async () => {
     const texts = ['text1', 'text2'];
     
-    (cache.readCache as jest.Mock)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ value: [9, 9, 9] });
+    const mockReadCache = cache.readCache as jest.MockedFunction<typeof cache.readCache>;
+    mockReadCache.mockResolvedValueOnce(null);
+    mockReadCache.mockResolvedValueOnce({ value: [9, 9, 9], meta: {} as any });
 
     mockModel.embedContent.mockResolvedValue({
       embedding: { values: [1, 2, 3] },
@@ -74,7 +74,7 @@ describe('EmbeddingsClient batching', () => {
   it('handles duplicate texts efficiently', async () => {
     const texts = ['text1', 'text1', 'text2'];
     
-    (cache.readCache as jest.Mock).mockResolvedValue(null);
+    (cache.readCache as jest.MockedFunction<typeof cache.readCache>).mockResolvedValue(null);
     
     mockModel.embedContent.mockResolvedValue({
       embedding: { values: [1, 2, 3] },
