@@ -7,6 +7,15 @@ import {
   SchemaValidationError,
   AgentExecutionError,
 } from './errors';
+import {
+  buildCacheEntry,
+  buildCacheKey,
+  CacheEntry,
+  readCache,
+  writeCache,
+} from '../utils/cache';
+import { PROMPT_VERSIONS, SCHEMA_VERSIONS } from './versions';
+import { limit } from '../utils/limiter';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -20,13 +29,6 @@ const defaultLogger: Logger = {
   info: (msg, ctx) => console.info(`[INFO] ${msg}`, ctx || ''),
 };
 
-function createTimeoutPromise<T>(timeoutMs: number): Promise<T> {
-  return new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Operation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
-}
 
 function formatValidationErrors(error: z.ZodError): string {
   const issues = error.issues.map((issue) => {
@@ -56,13 +58,47 @@ function getModelForAgent(agentName: string): string {
   return AGENT_MODELS.entityExtraction;
 }
 
+function getPromptVersionForAgent(agentName: string): string {
+  const normalizedName = agentName.toLowerCase();
+  if (normalizedName.includes('ingestion')) return PROMPT_VERSIONS.ingestion;
+  if (normalizedName.includes('entity')) return PROMPT_VERSIONS.entityExtraction;
+  if (normalizedName.includes('relationship'))
+    return PROMPT_VERSIONS.relationshipExtraction;
+  if (normalizedName.includes('validation')) return PROMPT_VERSIONS.validation;
+  if (normalizedName.includes('reasoning')) return PROMPT_VERSIONS.reasoning;
+  return PROMPT_VERSIONS.entityExtraction;
+}
+
+function getSchemaVersionForAgent(agentName: string): string {
+  const normalizedName = agentName.toLowerCase();
+  if (normalizedName.includes('ingestion')) return SCHEMA_VERSIONS.ingestion;
+  if (normalizedName.includes('entity')) return SCHEMA_VERSIONS.entityExtraction;
+  if (normalizedName.includes('relationship'))
+    return SCHEMA_VERSIONS.relationshipExtraction;
+  if (normalizedName.includes('validation')) return SCHEMA_VERSIONS.validation;
+  if (normalizedName.includes('reasoning')) return SCHEMA_VERSIONS.insight;
+  return SCHEMA_VERSIONS.entityExtraction;
+}
+
+type CacheProvider = 'gemini';
+
+interface CacheOptions {
+  input: unknown;
+  promptVersion?: string;
+  schemaVersion?: string;
+  provider?: CacheProvider;
+  modelOverride?: string;
+  disableCache?: boolean;
+}
+
 export async function runAgent<T>(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
   schema: z.ZodType<T>,
   config: AgentConfig = AGENT_CONFIG,
-  logger: Logger = defaultLogger
+  logger: Logger = defaultLogger,
+  cacheOptions?: CacheOptions
 ): Promise<T> {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -70,21 +106,62 @@ export async function runAgent<T>(
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const modelName = getModelForAgent(agentName);
+  const modelName = cacheOptions?.modelOverride || getModelForAgent(agentName);
+  const provider: CacheProvider = cacheOptions?.provider || 'gemini';
   const model = genAI.getGenerativeModel({ model: modelName });
 
   let lastError: z.ZodError | null = null;
+  let lastParseFailed = false;
+  let retryMode: 'normal' | 'compact' | 'minimal' = 'normal';
+  const isRelationshipExtraction = agentName.toLowerCase().includes('relationship');
+  const cacheVersion = {
+    prompt: cacheOptions?.promptVersion ?? getPromptVersionForAgent(agentName),
+    schema: cacheOptions?.schemaVersion ?? getSchemaVersionForAgent(agentName),
+  };
+
+  let cacheHitEntry: CacheEntry<T> | null = null;
+  if (cacheOptions && !cacheOptions.disableCache) {
+    const { key } = buildCacheKey({
+      agentName,
+      model: modelName,
+      provider,
+      promptVersion: cacheVersion.prompt,
+      schemaVersion: cacheVersion.schema,
+      input: cacheOptions.input,
+    });
+    cacheHitEntry = await readCache<T>(key);
+    if (cacheHitEntry) {
+      logger.info(`[${agentName}] Cache hit`);
+      return cacheHitEntry.value;
+    }
+  }
+
+  function looksLikeCompleteJson(text: string): boolean {
+    const trimmed = text.trim();
+    return trimmed.endsWith('}') || trimmed.endsWith(']');
+  }
 
   for (let attempt = 1; attempt <= config.maxRetries + 1; attempt++) {
+    const startedAt = Date.now();
     try {
+      const modeLabel = retryMode !== 'normal' ? ` (${retryMode} mode)` : '';
       logger.info(
-        `[${agentName}] Attempt ${attempt}/${config.maxRetries + 1} (model: ${modelName}, maxOutputTokens: ${config.maxTokens}, timeoutMs: ${config.timeoutMs})`
+        `[${agentName}] Attempt ${attempt}/${config.maxRetries + 1}${modeLabel} (model: ${modelName}, maxOutputTokens: ${config.maxTokens}, timeoutMs: ${config.timeoutMs})`
       );
 
       let enhancedUserMessage = userMessage;
-      if (attempt > 1 && lastError) {
+      
+      if (isRelationshipExtraction && retryMode === 'compact') {
+        enhancedUserMessage = `${userMessage}\n\nIMPORTANT: Omit evidence and provenance fields entirely. Return the same edges but only include {source_canonical_name, target_canonical_name, relationship_type, confidence}. Must be valid JSON and end with }.`;
+      } else if (isRelationshipExtraction && retryMode === 'minimal') {
+        enhancedUserMessage = `${userMessage}\n\nIMPORTANT: Return at most 8 edges. Only include {source_canonical_name, target_canonical_name, relationship_type, confidence}. No evidence, no provenance, no extra fields. Must be valid JSON and end with }.`;
+      } else if (lastParseFailed && attempt > 1 && !isRelationshipExtraction) {
+        enhancedUserMessage = `${userMessage}\n\nPrevious response could not be parsed (likely truncation or invalid JSON). Return valid JSON only. You may omit or truncate evidence fields if needed, but keep all required structure.`;
+      }
+      
+      if (attempt > 1 && lastError && retryMode === 'normal') {
         const errorFeedback = formatValidationErrors(lastError);
-        enhancedUserMessage = `${userMessage}\n\nPrevious validation errors:\n${errorFeedback}\n\nPlease fix these errors and return valid JSON.`;
+        enhancedUserMessage = `${enhancedUserMessage}\n\nPrevious validation errors:\n${errorFeedback}\n\nPlease fix these errors and return valid JSON.`;
       }
 
       const fullPrompt = `${systemPrompt}\n\nUser input:\n${enhancedUserMessage}`;
@@ -120,22 +197,40 @@ export async function runAgent<T>(
 
       const cleanedJsonSchema = cleanSchema(jsonSchema);
 
-      const apiCall = model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-        generationConfig: {
-          maxOutputTokens: config.maxTokens,
-          temperature: 0.0,
-          responseMimeType: 'application/json',
-          responseSchema: cleanedJsonSchema as any,
-        },
-      });
+      const response = await limit('gemini_llm', async () => {
+        const apiCall = model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: config.maxTokens,
+            temperature: 0.0,
+            responseMimeType: 'application/json',
+            responseSchema: cleanedJsonSchema as any,
+          },
+        });
 
-      const response = await Promise.race([
-        apiCall,
-        createTimeoutPromise<Awaited<ReturnType<typeof model.generateContent>>>(
-          config.timeoutMs
-        ),
-      ]);
+        let timeoutHandle: NodeJS.Timeout | null = null;
+        const timeoutPromise = new Promise<Awaited<ReturnType<typeof model.generateContent>>>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error(`Operation timed out after ${config.timeoutMs}ms`));
+          }, config.timeoutMs);
+          if (timeoutHandle.unref) {
+            timeoutHandle.unref();
+          }
+        });
+
+        try {
+          const result = await Promise.race([apiCall, timeoutPromise]);
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+          }
+          return result;
+        } catch (error) {
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+          }
+          throw error;
+        }
+      });
 
       const responseText = response.response.text();
 
@@ -145,8 +240,18 @@ export async function runAgent<T>(
 
       logger.info(`[${agentName}] Response length: ${responseText.length} chars`);
 
-      if (!responseText.trim().endsWith('}')) {
-        logger.warn(`[${agentName}] Response may be truncated - does not end with '}'`);
+      const isTruncated = !looksLikeCompleteJson(responseText);
+      if (isTruncated) {
+        logger.warn(`[${agentName}] Response appears truncated - does not end with } or ]`);
+        if (isRelationshipExtraction && attempt < config.maxRetries + 1) {
+          if (retryMode === 'normal') {
+            retryMode = 'compact';
+            logger.info(`[${agentName}] Switching to compact mode for next retry`);
+          } else if (retryMode === 'compact') {
+            retryMode = 'minimal';
+            logger.info(`[${agentName}] Switching to minimal mode for next retry`);
+          }
+        }
         if (attempt === config.maxRetries + 1) {
           logger.warn(`[${agentName}] Truncated response (first 1000 chars):`, {
             preview: responseText.substring(0, 1000),
@@ -157,7 +262,26 @@ export async function runAgent<T>(
       let jsonData: unknown;
       try {
         jsonData = JSON.parse(responseText);
+        lastParseFailed = false;
       } catch (parseError) {
+        lastParseFailed = true;
+        
+        if (isRelationshipExtraction && attempt < config.maxRetries + 1) {
+          if (retryMode === 'normal') {
+            retryMode = 'compact';
+            logger.warn(`[${agentName}] Parse failed, switching to compact mode for retry`);
+          } else if (retryMode === 'compact') {
+            retryMode = 'minimal';
+            logger.warn(`[${agentName}] Parse failed in compact mode, switching to minimal mode for retry`);
+          }
+          
+          logger.warn(`[${agentName}] JSON parse error (retryable for RelationshipExtraction):`, {
+            error: parseError instanceof Error ? parseError.message : String(parseError),
+            attempt,
+          });
+          continue;
+        }
+        
         if (attempt === config.maxRetries + 1) {
           const fullResponse = responseText.length > 2000 
             ? responseText.substring(0, 2000) + '...' 
@@ -172,7 +296,42 @@ export async function runAgent<T>(
       const validationResult = schema.safeParse(jsonData);
 
       if (validationResult.success) {
-        logger.info(`[${agentName}] Success on attempt ${attempt}`);
+        const modeNote = retryMode !== 'normal' ? ` (${retryMode} mode)` : '';
+        logger.info(`[${agentName}] Success on attempt ${attempt}${modeNote}`);
+        const durationMs = Date.now() - startedAt;
+
+        if (cacheOptions && !cacheOptions.disableCache && retryMode === 'normal') {
+          const { key, inputHash } = buildCacheKey({
+            agentName,
+            model: modelName,
+            provider,
+            promptVersion: cacheVersion.prompt,
+            schemaVersion: cacheVersion.schema,
+            input: cacheOptions.input,
+          });
+
+          const finishReason =
+            (response as any)?.response?.candidates?.[0]?.finishReason ??
+            (response as any)?.response?.promptFeedback?.blockReason;
+
+          const entry = buildCacheEntry(
+            {
+              agentName,
+              promptVersion: cacheVersion.prompt,
+              schemaVersion: cacheVersion.schema,
+              provider,
+              model: modelName,
+              inputHash,
+              durationMs,
+              finishReason: finishReason ?? undefined,
+            },
+            validationResult.data
+          );
+
+          await writeCache(key, entry);
+          logger.info(`[${agentName}] Cached result`);
+        }
+
         return validationResult.data;
       } else {
         lastError = validationResult.error;
@@ -201,6 +360,22 @@ export async function runAgent<T>(
 
       if (error instanceof SchemaValidationError) {
         throw error;
+      }
+
+      const isParseError = error instanceof Error && error.message.includes('Failed to parse JSON');
+      
+      if (isParseError && isRelationshipExtraction && attempt < config.maxRetries + 1) {
+        if (retryMode === 'normal') {
+          retryMode = 'compact';
+          logger.warn(`[${agentName}] Parse error, switching to compact mode for retry`);
+        } else if (retryMode === 'compact') {
+          retryMode = 'minimal';
+          logger.warn(`[${agentName}] Parse error in compact mode, switching to minimal mode for retry`);
+        }
+        logger.warn(`[${agentName}] Error on attempt ${attempt} (will retry)`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
       }
 
       if (attempt === config.maxRetries + 1) {

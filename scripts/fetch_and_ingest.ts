@@ -2,10 +2,19 @@ import 'dotenv/config';
 import path from 'path';
 import { selectCorpus } from '../src/ingest/semanticScholar/selection';
 import { selectCorpusArxiv } from '../src/ingest/arxiv/selection';
+import { extractArxivId, searchArxivByTitle } from '../src/ingest/arxiv/util';
 import { downloadPdfsForSelected } from '../src/ingest/semanticScholar/downloader';
 import { parsePaperFile } from '../src/utils/paperParser';
 import { runPipeline } from '../src/pipeline/runPipeline';
+import { runReasoningBatch } from '../src/pipeline/runReasoningBatch';
 import { createDatabaseClient } from '../src/db/client';
+import path from 'path';
+
+const defaultLogger = {
+  error: (msg: string, ctx?: Record<string, unknown>) => console.error(`[Ingest] ${msg}`, ctx || ''),
+  warn: (msg: string, ctx?: Record<string, unknown>) => console.warn(`[Ingest] ${msg}`, ctx || ''),
+  info: (msg: string, ctx?: Record<string, unknown>) => console.info(`[Ingest] ${msg}`, ctx || ''),
+};
 
 async function main() {
   const seedTitle = process.argv.slice(2).join(' ').trim();
@@ -30,11 +39,15 @@ async function main() {
   }
 
   const useArxivOnly = process.env.USE_ARXIV === '1';
+  const forceReingest = process.env.FORCE_REINGEST === '1';
+  const mode = process.env.MODE || 'incremental';
+
+  const db = createDatabaseClient();
 
   let selection:
     | {
-        seed: { paperId: string; title: string; year?: number; externalIds?: Record<string, string> };
-        selected: Array<{ paperId: string; title: string; abstract?: string; year?: number; externalIds?: Record<string, string> }>;
+        seed: { paperId: string; title: string; year?: number; externalIds?: Record<string, string>; arxivId?: string | null };
+        selected: Array<{ paperId: string; title: string; abstract?: string; year?: number; externalIds?: Record<string, string>; arxivId?: string | null }>;
         debug: Record<string, unknown>;
       }
     | null = null;
@@ -64,23 +77,47 @@ async function main() {
     });
   }
 
-  const withArxiv: typeof selection.selected = [];
+  // Resolve arXiv IDs aggressively (normalize + title search), and allow metadata-only fallback
+  const resolved: typeof selection.selected = [];
   for (const p of selection.selected) {
-    if (p.externalIds?.arxiv) {
-      withArxiv.push(p);
+    if (resolved.length >= limit) break;
+    const direct = p.arxivId || extractArxivId(p);
+    if (direct) {
+      resolved.push({ ...p, arxivId: direct });
+      continue;
     }
-    if (withArxiv.length >= limit) break;
+    const fromTitle = p.title ? await searchArxivByTitle(p.title) : null;
+    if (fromTitle) {
+      resolved.push({ ...p, arxivId: fromTitle });
+      continue;
+    }
+    // metadata-only fallback
+    resolved.push({ ...p, arxivId: null });
   }
 
-  if (withArxiv.length === 0) {
-    throw new Error('No selected papers with arxiv IDs to download.');
+  const downloadable = resolved.filter((p) => p.arxivId);
+
+  let toDownload = downloadable;
+  if (mode === 'incremental' && !forceReingest) {
+    const paperIds = downloadable.map((p) => p.paperId || p.arxivId || '').filter(Boolean);
+    const existing = await db.getExistingPaperIds(paperIds);
+    toDownload = downloadable.filter((p) => {
+      const id = p.paperId || p.arxivId || '';
+      return !existing.has(id);
+    });
+    console.log(
+      `[Select] Filtered: ${toDownload.length}/${downloadable.length} papers need download (${existing.size} already exist)`
+    );
   }
 
   console.log(
-    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected with arxiv: ${withArxiv.length} (target ${limit})`
+    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected: ${resolved.length} | With arxiv: ${downloadable.length} | To download: ${toDownload.length} (target ${limit})`
   );
 
-  const downloads = await downloadPdfsForSelected(withArxiv, downloadDir, withArxiv.length);
+  const downloads =
+    toDownload.length > 0
+      ? await downloadPdfsForSelected(toDownload as any, downloadDir, Math.min(toDownload.length, limit))
+      : [];
 
   const succeeded = downloads.filter((d) => d.ok) as Array<{
     paperId: string;
@@ -94,25 +131,70 @@ async function main() {
     console.warn(`[Download] Failed ${f.paperId}: ${f.reason}`);
   }
 
-  const db = createDatabaseClient();
-  const ingestTasks = succeeded.map(async (d) => {
+  // Prepare ingestion tasks: downloaded PDFs first, then metadata-only if no PDF
+  const ingestTasks = resolved.slice(0, limit).map(async (p) => {
+    const downloaded = succeeded.find((d) => d.paperId === p.paperId || d.paperId === p.arxivId);
+    if (!downloaded) {
+      console.warn(`[Ingest] No PDF for ${p.paperId}; skipping PDF parse and storing metadata only.`);
+      try {
+        await db.upsertPaper({
+          paper_id: p.paperId,
+          title: p.title,
+          abstract: p.abstract,
+          year: p.year,
+          metadata: { externalIds: p.externalIds || {} },
+        });
+      } catch (err) {
+        console.warn(`[Ingest] Metadata-only upsert failed for ${p.paperId}`, err);
+      }
+      return false;
+    }
+
     try {
-      console.log(`[Ingest] Parsing ${d.filePath}`);
-      const paperInput = await parsePaperFile(d.filePath);
+      console.log(`[Ingest] Parsing ${downloaded.filePath}`);
+      const paperInput = await parsePaperFile(downloaded.filePath);
       console.log(`[Ingest] Running pipeline for ${paperInput.paper_id}`);
-      const result = await runPipeline(paperInput, db);
+      const result = await runPipeline(paperInput, db, defaultLogger, {
+        forceReingest,
+      });
       console.log(`[Ingest] Done ${paperInput.paper_id} success=${result.success}`);
       return result.success;
     } catch (err) {
-      console.error(`[Ingest] Failed for ${d.paperId}:`, err);
+      console.error(`[Ingest] Failed for ${downloaded.paperId}:`, err);
       return false;
     }
   });
 
   const ingestResults = await Promise.allSettled(ingestTasks);
-  const okCount = ingestResults.filter((r) => r.status === 'fulfilled' && r.value === true).length;
+  const okResults = ingestResults
+    .map((r, idx) => ({ result: r, paper: resolved[idx] }))
+    .filter((r) => r.result.status === 'fulfilled' && r.result.value === true);
+  const okCount = okResults.length;
+  const affectedPaperIds = okResults
+    .map((r) => {
+      const downloaded = succeeded.find(
+        (d) => d.paperId === r.paper.paperId || d.paperId === r.paper.arxivId
+      );
+      if (downloaded) {
+        const fileName = path.basename(downloaded.filePath, '.pdf');
+        return fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      }
+      return r.paper.paperId;
+    })
+    .filter(Boolean);
 
   console.log(`[Done] Ingested ${okCount} papers. Seed: ${selection.seed.title}`);
+
+  if (okCount > 0) {
+    try {
+      await runReasoningBatch(db, defaultLogger, undefined, affectedPaperIds);
+      console.log('[ReasoningBatch] Completed');
+    } catch (err) {
+      console.error('[ReasoningBatch] Failed', err);
+    }
+  } else {
+    console.log('[ReasoningBatch] Skipped (no successful ingests)');
+  }
 }
 
 main().catch((err) => {

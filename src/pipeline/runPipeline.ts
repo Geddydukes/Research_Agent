@@ -1,31 +1,42 @@
 import { runAgent } from '../agents/runAgent';
-import { AGENT_CONFIG, REASONING_CONFIG } from '../agents/config';
+import { AGENT_CONFIG, AGENT_MODELS, REASONING_CONFIG } from '../agents/config';
 import {
   IngestionSchema,
   EntitySchema,
-  EdgeSchema,
-  ValidationSchema,
+  RelationshipCoreSchema,
+  RelationshipEvidenceSchema,
   InsightSchema,
   type IngestionOutput,
   type EntityOutput,
-  type EdgeOutput,
+  type RelationshipCoreOutput,
+  type RelationshipEvidenceOutput,
   type ValidationOutput,
   type InsightOutput,
 } from '../agents/schemas';
 import {
   INGESTION_PROMPT,
   ENTITY_EXTRACTION_PROMPT,
-  RELATIONSHIP_EXTRACTION_PROMPT,
-  VALIDATION_PROMPT,
+  RELATIONSHIP_CORE_PROMPT,
+  RELATIONSHIP_EVIDENCE_PROMPT,
   REASONING_PROMPT,
 } from '../agents/prompts';
-import { createDatabaseClient, DatabaseClient } from '../db/client';
+import { createDatabaseClient, DatabaseClient, type PaperSection } from '../db/client';
 import {
   TimeoutError,
   SchemaValidationError,
   AgentExecutionError,
 } from '../agents/errors';
 import type { PaperInput, PipelineResult } from './types';
+import { PROMPT_VERSIONS, SCHEMA_VERSIONS } from '../agents/versions';
+import { validateEntitiesAndEdges } from '../agents/validationRules';
+import { canonicalize } from '../utils/canonicalize';
+import {
+  computeDerivedHash,
+  readDerivedCache,
+  writeDerivedCache,
+  getCacheStats,
+  resetCacheStats,
+} from '../cache/derived';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -58,59 +69,98 @@ async function insertEntitiesWithDedup(
   paperId: string,
   logger: Logger = defaultLogger
 ): Promise<Map<string, number>> {
+  const startTime = Date.now();
   const entityMap = new Map<string, number>();
 
-  for (const entity of validatedEntities) {
-    if (entity.decision === 'rejected') {
-      continue;
-    }
-    
-    if (entity.decision === 'flagged') {
-      logger.info(`[Pipeline] Entity flagged for review: ${entity.canonical_name} (${entity.reason || 'no reason provided'})`);
-    }
-
-    let node = await db.findNodeByCanonicalName(
-      entity.canonical_name,
-      entity.type
-    );
-
-    if (!node) {
-      node = await db.insertNode({
-        type: entity.type,
-        canonical_name: entity.canonical_name,
-        original_confidence: entity.original_confidence,
-        adjusted_confidence: entity.adjusted_confidence,
-      });
-    }
-
-    entityMap.set(entity.canonical_name, node.id);
-
-    await db.insertEntityMentions([
-      {
-        node_id: node.id,
-        paper_id: paperId,
-        mention_count: 1,
-      },
-    ]);
+  const entitiesToProcess = validatedEntities.filter((e) => e.decision !== 'rejected');
+  
+  if (entitiesToProcess.length === 0) {
+    logger.info('[Pipeline] No entities to insert');
+    return entityMap;
   }
 
+  const flaggedEntities = entitiesToProcess.filter((e) => e.decision === 'flagged');
+  if (flaggedEntities.length > 0) {
+    logger.info(`[Pipeline] ${flaggedEntities.length} entities flagged for review`);
+  }
+
+  const lookupPairs = entitiesToProcess.map((entity) => ({
+    canonical_name: canonicalize(entity.canonical_name),
+    type: entity.type,
+  }));
+
+  const lookupStart = Date.now();
+  const existingNodes = await db.findNodesByCanonicalNames(lookupPairs);
+  logger.info(`[Pipeline] Entity dedupe lookup: ${Date.now() - lookupStart}ms for ${lookupPairs.length} entities`);
+
+  const nodesToInsert: Array<{
+    type: string;
+    canonical_name: string;
+    original_confidence: number;
+    adjusted_confidence: number;
+    metadata: Record<string, unknown>;
+    entityIndex: number;
+  }> = [];
+
+  for (let i = 0; i < entitiesToProcess.length; i++) {
+    const entity = entitiesToProcess[i]!;
+    const canonicalKey = lookupPairs[i]!.canonical_name;
+    const key = `${canonicalKey}|${entity.type}`;
+    
+    const existingNode = existingNodes.get(key);
+    if (existingNode) {
+      entityMap.set(canonicalKey, existingNode.id);
+    } else {
+      nodesToInsert.push({
+        type: entity.type,
+        canonical_name: canonicalKey,
+        original_confidence: entity.original_confidence,
+        adjusted_confidence: entity.adjusted_confidence,
+        metadata: {
+          display_name: entity.canonical_name,
+        },
+        entityIndex: i,
+      });
+    }
+  }
+
+  if (nodesToInsert.length > 0) {
+    const insertStart = Date.now();
+    const nodesForInsert = nodesToInsert.map(({ entityIndex, ...node }) => node);
+    const insertedNodes = await db.insertNodes(nodesForInsert);
+    logger.info(`[Pipeline] Node batch insert: ${Date.now() - insertStart}ms for ${insertedNodes.length} nodes`);
+
+    for (let i = 0; i < nodesToInsert.length; i++) {
+      const canonicalKey = lookupPairs[nodesToInsert[i]!.entityIndex]!.canonical_name;
+      entityMap.set(canonicalKey, insertedNodes[i]!.id);
+    }
+  }
+
+  const mentionsStart = Date.now();
+  const mentions = Array.from(entityMap.values()).map((nodeId) => ({
+    node_id: nodeId,
+    paper_id: paperId,
+    mention_count: 1,
+  }));
+  
+  await db.insertEntityMentions(mentions);
+  logger.info(`[Pipeline] Mention batch insert: ${Date.now() - mentionsStart}ms for ${mentions.length} mentions`);
+
+  logger.info(`[Pipeline] Entity dedupe total: ${Date.now() - startTime}ms (${entitiesToProcess.length} entities, ${nodesToInsert.length} new nodes)`);
+  
   return entityMap;
 }
 
 async function insertEdges(
   db: DatabaseClient,
   validatedEdges: ValidationOutput['validated_edges'],
-  originalEdges: EdgeOutput['edges'],
+  evidenceMap: Map<string, { evidence: string; sectionId?: number; sectionType?: string; partIndex?: number }>,
   entityMap: Map<string, number>,
-  logger: Logger = defaultLogger
-): Promise<void> {
+  logger: Logger = defaultLogger,
+  sourcePaperId?: string
+): Promise<Map<string, number>> {
   const edgesToInsert = [];
-
-  const originalEdgeMap = new Map<string, EdgeOutput['edges'][0]>();
-  for (const origEdge of originalEdges) {
-    const key = `${origEdge.source_canonical_name}::${origEdge.target_canonical_name}::${origEdge.relationship_type}`;
-    originalEdgeMap.set(key, origEdge);
-  }
+  const edgeIdByKey = new Map<string, number>();
 
   for (const validatedEdge of validatedEdges) {
     if (validatedEdge.decision === 'rejected') {
@@ -131,98 +181,113 @@ async function insertEdges(
       continue;
     }
 
-    const key = `${validatedEdge.source_canonical_name}::${validatedEdge.target_canonical_name}::${validatedEdge.relationship_type}`;
-    const originalEdge = originalEdgeMap.get(key);
+    const key = `${validatedEdge.source_canonical_name}::${validatedEdge.relationship_type}::${validatedEdge.target_canonical_name}`;
+    const evidenceData = evidenceMap.get(key);
 
     edgesToInsert.push({
       source_node_id: sourceId,
       target_node_id: targetId,
       relationship_type: validatedEdge.relationship_type,
       confidence: validatedEdge.confidence,
-      evidence: originalEdge?.evidence,
-      provenance: originalEdge?.provenance,
+          evidence: evidenceData?.evidence?.slice(0, 300) || undefined,
+          provenance: {
+            section_id: evidenceData?.sectionId,
+            section_type: evidenceData?.sectionType,
+            part_index: evidenceData?.partIndex,
+            meta: {
+              source_paper_id: sourcePaperId,
+              validation_status: validatedEdge.decision,
+              validation_reasons: validatedEdge.reason ? [validatedEdge.reason] : [],
+            },
+          } as Record<string, unknown>,
     });
   }
 
   if (edgesToInsert.length > 0) {
-    await db.insertEdges(edgesToInsert);
+    const inserted = await db.insertEdges(edgesToInsert);
+    let insertIdx = 0;
+    for (const ve of validatedEdges) {
+      if (ve.decision === 'rejected') continue;
+      const sourceId = entityMap.get(ve.source_canonical_name);
+      const targetId = entityMap.get(ve.target_canonical_name);
+      if (!sourceId || !targetId) continue;
+      
+      if (insertIdx < inserted.length) {
+        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
+        edgeIdByKey.set(key, inserted[insertIdx].id);
+        insertIdx++;
+      }
+    }
   }
+
+  return edgeIdByKey;
 }
 
-async function insertInsights(
-  db: DatabaseClient,
-  insights: InsightOutput['insights'],
-  graphNodes: Array<{ id: number; canonical_name: string; type: string }>
-): Promise<void> {
-  const nodeNameMap = new Map<string, number>();
-  const nodeIdMap = new Map<string, number>();
-  
-  for (const node of graphNodes) {
-    const key = `${node.canonical_name}::${node.type}`;
-    if (!nodeNameMap.has(key)) {
-      nodeNameMap.set(key, node.id);
-    }
-    if (!nodeNameMap.has(node.canonical_name)) {
-      nodeNameMap.set(node.canonical_name, node.id);
-    }
-    nodeIdMap.set(node.id.toString(), node.id);
-  }
-
-  const insightsToInsert = [];
-
-  for (const insight of insights) {
-    const nodeIds = insight.subject_nodes
-      .map((ref) => {
-        const byId = nodeIdMap.get(ref);
-        if (byId !== undefined) return byId;
-        return nodeNameMap.get(ref);
-      })
-      .filter((id): id is number => id !== undefined);
-
-    if (nodeIds.length === 0) {
-      defaultLogger.warn('Insight references unknown entities', {
-        nodes: insight.subject_nodes,
-      });
-      continue;
-    }
-
-    insightsToInsert.push({
-      insight_type: insight.insight_type,
-      subject_nodes: nodeIds,
-      reasoning_path: insight.reasoning_path || undefined,
-      confidence: insight.confidence,
-    });
-  }
-
-  if (insightsToInsert.length > 0) {
-    await db.insertInsights(insightsToInsert);
-  }
-}
 
 export async function runPipeline(
   input: PaperInput,
   db?: DatabaseClient,
-  logger: Logger = defaultLogger
+  logger: Logger = defaultLogger,
+  options?: { runReasoning?: boolean; forceReingest?: boolean }
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const dbClient = db || createDatabaseClient();
+  const runReasoning =
+    options?.runReasoning ?? process.env.REASONING_ENABLED === 'true';
+  const forceReingest = options?.forceReingest ?? process.env.FORCE_REINGEST === '1';
+
+  resetCacheStats();
 
   try {
     logger.info(`Processing paper ${input.paper_id}`);
 
+    if (!forceReingest) {
+      const exists = await dbClient.paperExists(input.paper_id);
+      if (exists) {
+        logger.info(`[Pipeline] Paper ${input.paper_id} already exists, skipping`);
+        return {
+          success: true,
+          paper_id: input.paper_id,
+          stats: {
+            sectionsExtracted: 0,
+            entitiesExtracted: 0,
+            edgesExtracted: 0,
+            entitiesApproved: 0,
+            entitiesFlagged: 0,
+            entitiesRejected: 0,
+            edgesApproved: 0,
+            edgesFlagged: 0,
+            edgesRejected: 0,
+            insightsGenerated: 0,
+            processingTimeMs: Date.now() - startTime,
+            reasoningSkipped: !runReasoning,
+          },
+        };
+      }
+    }
+
     logger.info('[Ingestion] Starting...');
     const trimmedRaw = input.raw_text.slice(0, 60000);
+    const ingestionInput = {
+      paper_id: input.paper_id,
+      title: input.title,
+      raw_text: trimmedRaw,
+      metadata: input.metadata,
+    };
     const ingested = await runAgent<IngestionOutput>(
       'Ingestion',
       INGESTION_PROMPT,
-      JSON.stringify({
-        paper_id: input.paper_id,
-        title: input.title,
-        raw_text: trimmedRaw,
-        metadata: input.metadata,
-      }),
+      JSON.stringify(ingestionInput),
       IngestionSchema,
-      { ...AGENT_CONFIG, timeoutMs: 180000, maxTokens: 24000 } // allow longer/larger responses for ingestion
+      { ...AGENT_CONFIG, timeoutMs: 180000, maxTokens: 24000 },
+      logger,
+      {
+        input: ingestionInput,
+        promptVersion: PROMPT_VERSIONS.ingestion,
+        schemaVersion: SCHEMA_VERSIONS.ingestion,
+        provider: 'gemini',
+        modelOverride: AGENT_MODELS.ingestion,
+      }
     );
 
     logger.info(
@@ -237,99 +302,159 @@ export async function runPipeline(
       (s) => s.section_type === 'abstract'
     );
 
-    try {
-      await dbClient.insertPaper({
-        paper_id: ingested.paper_id,
-        title: ingested.title || undefined,
-        abstract: abstractSection?.content || undefined,
-        year: ingested.year ?? undefined,
-        metadata: {
-          authors: ingested.authors,
-          ...(input.metadata || {}),
-        },
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('duplicate key')) {
-        logger.warn(`[Pipeline] Paper ${ingested.paper_id} already exists, skipping insert`);
-      } else {
-        throw error;
-      }
-    }
+    await dbClient.upsertPaper({
+      paper_id: ingested.paper_id,
+      title: ingested.title || undefined,
+      abstract: abstractSection?.content || undefined,
+      year: ingested.year ?? undefined,
+      metadata: {
+        authors: ingested.authors,
+        ...(input.metadata || {}),
+      },
+    });
 
     const sections = formatSectionsForDb(ingested.paper_id, ingested.sections);
-    await dbClient.insertPaperSections(sections);
+    const sectionsHash = computeDerivedHash(
+      'sections',
+      { paper_id: ingested.paper_id, sections: ingested.sections },
+      SCHEMA_VERSIONS.ingestion,
+      PROMPT_VERSIONS.ingestion
+    );
+    const cachedSections = await readDerivedCache<PaperSection[]>(
+      'sections',
+      sectionsHash
+    );
+    let insertedSections: PaperSection[];
+    if (cachedSections) {
+      insertedSections = cachedSections;
+    } else {
+      insertedSections = await dbClient.insertPaperSections(sections);
+      await writeDerivedCache(
+        'sections',
+        sectionsHash,
+        insertedSections,
+        SCHEMA_VERSIONS.ingestion,
+        PROMPT_VERSIONS.ingestion
+      );
+    }
+    const sectionIdByPartIndex = new Map<number, number>();
+    for (const sec of insertedSections) {
+      sectionIdByPartIndex.set(sec.part_index, sec.id);
+    }
 
     logger.info('[EntityExtraction] Starting...');
+    const entityInput = {
+      paper_id: ingested.paper_id,
+      sections: ingested.sections,
+    };
     const entities = await runAgent<EntityOutput>(
       'EntityExtraction',
       ENTITY_EXTRACTION_PROMPT,
-      JSON.stringify({
-        paper_id: ingested.paper_id,
-        sections: ingested.sections,
-      }),
-      EntitySchema
+      JSON.stringify(entityInput),
+      EntitySchema,
+      AGENT_CONFIG,
+      logger,
+      {
+        input: entityInput,
+        promptVersion: PROMPT_VERSIONS.entityExtraction,
+        schemaVersion: SCHEMA_VERSIONS.entityExtraction,
+        provider: 'gemini',
+        modelOverride: AGENT_MODELS.entityExtraction,
+      }
+    );
+
+    if (entities.entities.length > 0) {
+      let totalConfidence = 0;
+      for (const e of entities.entities) {
+        totalConfidence += e.original_confidence;
+      }
+      const avgConfidence = (totalConfidence / entities.entities.length).toFixed(2);
+      logger.info(`[EntityExtraction] Extracted ${entities.entities.length} entities with avg confidence ${avgConfidence}`);
+    } else {
+      logger.info(`[EntityExtraction] Extracted 0 entities`);
+    }
+
+    logger.info('[RelationshipCoreExtraction] Starting...');
+    const relationshipInput = {
+      entities: entities.entities,
+      sections: ingested.sections,
+      paper_id: ingested.paper_id,
+    };
+    const coreRelationships = await runAgent<RelationshipCoreOutput>(
+      'RelationshipCoreExtraction',
+      RELATIONSHIP_CORE_PROMPT,
+      JSON.stringify(relationshipInput),
+      RelationshipCoreSchema,
+      { ...AGENT_CONFIG, timeoutMs: 60000 },
+      logger,
+      {
+        input: relationshipInput,
+        promptVersion: PROMPT_VERSIONS.relationshipExtraction,
+        schemaVersion: SCHEMA_VERSIONS.relationshipExtraction,
+        provider: 'gemini',
+        modelOverride: AGENT_MODELS.relationshipExtraction,
+      }
     );
 
     logger.info(
-      `[EntityExtraction] Extracted ${entities.entities.length} entities with avg confidence ${(
-        entities.entities.reduce(
-          (sum, e) => sum + e.original_confidence,
-          0
-        ) / entities.entities.length || 0
-      ).toFixed(2)}`
+      `[RelationshipCoreExtraction] Extracted ${coreRelationships.relationships.length} relationships`
     );
 
-    logger.info('[RelationshipExtraction] Starting...');
-    const edges = await runAgent<EdgeOutput>(
-      'RelationshipExtraction',
-      RELATIONSHIP_EXTRACTION_PROMPT,
-      JSON.stringify({
-        entities: entities.entities,
-        sections: ingested.sections,
+    const relationshipsSorted = [...coreRelationships.relationships].sort((a, b) => {
+      const keyA = `${a.source_canonical_name}::${a.relationship_type}::${a.target_canonical_name}`;
+      const keyB = `${b.source_canonical_name}::${b.relationship_type}::${b.target_canonical_name}`;
+      return keyA.localeCompare(keyB);
+    });
+
+    const relationshipCandidatesHash = computeDerivedHash(
+      'relationship_candidates',
+      {
         paper_id: ingested.paper_id,
-      }),
-      EdgeSchema,
-      { ...AGENT_CONFIG, timeoutMs: 120000 }
+        relationships: relationshipsSorted,
+      },
+      SCHEMA_VERSIONS.relationshipExtraction,
+      PROMPT_VERSIONS.relationshipExtraction
     );
 
-    logger.info(
-      `[RelationshipExtraction] Extracted ${edges.edges.length} relationships`
+    const cachedRelationships = await readDerivedCache<typeof relationshipsSorted>(
+      'relationship_candidates',
+      relationshipCandidatesHash
     );
 
-    logger.info('[Validation] Starting...');
-    const validated = await runAgent<ValidationOutput>(
-      'Validation',
-      VALIDATION_PROMPT,
-      JSON.stringify({
-        entities: entities.entities,
-        edges: edges.edges,
-      }),
-      ValidationSchema
-    );
+    const coreEdgesForValidation = (cachedRelationships || relationshipsSorted).map((rel) => ({
+      source_canonical_name: rel.source_canonical_name,
+      target_canonical_name: rel.target_canonical_name,
+      source_type: 'Entity',
+      target_type: 'Entity',
+      relationship_type: rel.relationship_type,
+      confidence: rel.confidence,
+      evidence: '',
+      provenance: {},
+    }));
 
-    const entityStats = {
-      approved: validated.validated_entities.filter(
-        (e) => e.decision === 'approved'
-      ).length,
-      flagged: validated.validated_entities.filter(
-        (e) => e.decision === 'flagged'
-      ).length,
-      rejected: validated.validated_entities.filter(
-        (e) => e.decision === 'rejected'
-      ).length,
-    };
+    if (!cachedRelationships) {
+      await writeDerivedCache(
+        'relationship_candidates',
+        relationshipCandidatesHash,
+        relationshipsSorted,
+        SCHEMA_VERSIONS.relationshipExtraction,
+        PROMPT_VERSIONS.relationshipExtraction
+      );
+    }
 
-    const edgeStats = {
-      approved: validated.validated_edges.filter(
-        (e) => e.decision === 'approved'
-      ).length,
-      flagged: validated.validated_edges.filter(
-        (e) => e.decision === 'flagged'
-      ).length,
-      rejected: validated.validated_edges.filter(
-        (e) => e.decision === 'rejected'
-      ).length,
-    };
+    logger.info('[Validation] Starting (deterministic rules)...');
+    const validated = validateEntitiesAndEdges(entities.entities, coreEdgesForValidation);
+
+    const entityStats = { approved: 0, flagged: 0, rejected: 0 };
+    const edgeStats = { approved: 0, flagged: 0, rejected: 0 };
+
+    for (const e of validated.validated_entities) {
+      entityStats[e.decision]++;
+    }
+
+    for (const e of validated.validated_edges) {
+      edgeStats[e.decision]++;
+    }
 
     logger.info(
       `[Validation] Approved: ${entityStats.approved}/${validated.validated_entities.length} entities, ${edgeStats.approved}/${validated.validated_edges.length} edges (${edgeStats.flagged} flagged for review)`
@@ -342,6 +467,32 @@ export async function runPipeline(
       ingested.paper_id,
       logger
     );
+
+    const entitiesForCache = Array.from(entityMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+    const mergedEntitiesHash = computeDerivedHash(
+      'entities',
+      {
+        paper_id: ingested.paper_id,
+        entities: entitiesForCache.map(([name, id]) => ({ name, id })),
+      },
+      SCHEMA_VERSIONS.entityExtraction,
+      PROMPT_VERSIONS.entityExtraction
+    );
+    
+    const cachedEntities = await readDerivedCache<Array<[string, number]>>(
+      'entities',
+      mergedEntitiesHash
+    );
+    
+    if (!cachedEntities) {
+      await writeDerivedCache(
+        'entities',
+        mergedEntitiesHash,
+        entitiesForCache,
+        SCHEMA_VERSIONS.entityExtraction,
+        PROMPT_VERSIONS.entityExtraction
+      );
+    }
 
     let paperNode = await dbClient.findNodeByCanonicalName(
       ingested.paper_id,
@@ -361,55 +512,199 @@ export async function runPipeline(
 
     entityMap.set(ingested.paper_id, paperNode.id);
 
-    await insertEdges(
+    const approvedEdges = validated.validated_edges
+      .filter((e) => e.decision === 'approved' || e.decision === 'flagged')
+      .sort((a, b) => {
+        const keyA = `${a.source_canonical_name}::${a.relationship_type}::${a.target_canonical_name}`;
+        const keyB = `${b.source_canonical_name}::${b.relationship_type}::${b.target_canonical_name}`;
+        return keyA.localeCompare(keyB);
+      });
+
+    const edgeInsertStart = Date.now();
+    const edgeIdByKey = await insertEdges(
       dbClient,
       validated.validated_edges,
-      edges.edges,
+      new Map(),
       entityMap,
-      logger
+      logger,
+      ingested.paper_id
     );
+    logger.info(`[Pipeline] Edge batch insert: ${Date.now() - edgeInsertStart}ms for ${edgeIdByKey.size} edges`);
 
-    logger.info('[Reasoning] Starting...');
-    const graphData = await dbClient.getGraphData();
-    logger.info(`[Reasoning] Graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`);
-    
-    const reasoningInput = {
-      nodes: graphData.nodes.map(n => ({
-        id: n.id.toString(),
-        type: n.type,
-        canonical_name: n.canonical_name,
-        metadata: n.metadata,
-      })),
-      edges: graphData.edges.map(e => ({
-        id: e.id.toString(),
-        source_node_id: e.source_node_id.toString(),
-        target_node_id: e.target_node_id.toString(),
-        relationship_type: e.relationship_type,
-        confidence: e.confidence,
-        evidence: e.evidence || '',
-      })),
-      papers: [],
-      total_papers_in_corpus: 1,
-    };
-    
-    const inputSize = JSON.stringify(reasoningInput).length;
-    logger.info(`[Reasoning] Input size: ${inputSize} chars`);
-    
-    const insights = await runAgent<InsightOutput>(
-      'Reasoning',
-      REASONING_PROMPT,
-      JSON.stringify(reasoningInput),
-      InsightSchema,
-      REASONING_CONFIG
-    );
+    if (approvedEdges.length > 0) {
+      logger.info('[RelationshipEvidenceEnrichment] Starting...');
+      const relationshipInputs = approvedEdges.map((ve) => {
+        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
+        return {
+          edge_key: key,
+          source_canonical_name: ve.source_canonical_name,
+          target_canonical_name: ve.target_canonical_name,
+          relationship_type: ve.relationship_type,
+        };
+      });
 
-    logger.info(
-      `[Reasoning] Generated ${insights.insights.length} insights`
-    );
+      const evidenceInput = {
+        paper_id: ingested.paper_id,
+        sections: ingested.sections.map((s, idx) => ({
+          section_type: s.section_type,
+          content: s.content,
+          part_index: s.part_index ?? idx,
+        })),
+        relationships: relationshipInputs,
+      };
+      const evidenceData = await runAgent<RelationshipEvidenceOutput>(
+        'RelationshipEvidenceEnrichment',
+        RELATIONSHIP_EVIDENCE_PROMPT,
+        JSON.stringify(evidenceInput),
+        RelationshipEvidenceSchema,
+        { ...AGENT_CONFIG, timeoutMs: 60000 },
+        logger,
+        {
+          input: {
+            paper_id: ingested.paper_id,
+            sections: ingested.sections,
+            relationships: relationshipInputs,
+          },
+          promptVersion: PROMPT_VERSIONS.relationshipExtraction,
+          schemaVersion: SCHEMA_VERSIONS.relationshipExtraction,
+          provider: 'gemini',
+          modelOverride: AGENT_MODELS.relationshipExtraction,
+        }
+      );
 
-    await insertInsights(dbClient, insights.insights, graphData.nodes);
+      logger.info(
+        `[RelationshipEvidenceEnrichment] Enriched ${evidenceData.evidence.length} edges with evidence`
+      );
+
+      const evidenceMap = new Map(
+        evidenceData.evidence.map((ev) => [
+          ev.edge_key,
+          {
+            evidence: ev.evidence,
+            sectionId: ev.section_id,
+            sectionType: ev.section_type,
+            partIndex: ev.part_index,
+          },
+        ])
+      );
+
+      const evidenceUpdates: Array<{
+        edgeId: number;
+        evidence: string;
+        provenance: Record<string, unknown>;
+      }> = [];
+      
+      for (const ve of approvedEdges) {
+        const key = `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`;
+        const edgeId = edgeIdByKey.get(key);
+        const evData = evidenceMap.get(key);
+        if (edgeId && evData) {
+          evidenceUpdates.push({
+            edgeId,
+            evidence: evData.evidence,
+            provenance: {
+              section_id: evData.sectionId,
+              section_type: evData.sectionType,
+              part_index: evData.partIndex,
+              meta: {
+                source_paper_id: ingested.paper_id,
+                validation_status: ve.decision,
+                validation_reasons: ve.reason ? [ve.reason] : [],
+              },
+            },
+          });
+        }
+      }
+
+      if (evidenceUpdates.length > 0) {
+        const evidenceStart = Date.now();
+        await dbClient.updateEdgesEvidence(evidenceUpdates);
+        logger.info(`[Pipeline] Edge evidence batch update: ${Date.now() - evidenceStart}ms for ${evidenceUpdates.length} edges`);
+      }
+    }
+
+    let insights: InsightOutput | null = null;
+    if (!runReasoning) {
+      logger.info('[Reasoning] Skipped (disabled or batched)');
+    } else {
+      logger.info('[Reasoning] Starting...');
+      const graphData = await dbClient.getGraphData();
+      logger.info(
+        `[Reasoning] Graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`
+      );
+
+      const reasoningInput = {
+        nodes: graphData.nodes.map((n) => ({
+          id: n.id.toString(),
+          type: n.type,
+          canonical_name: n.canonical_name,
+          metadata: n.metadata,
+        })),
+        edges: graphData.edges.map((e) => ({
+          id: e.id.toString(),
+          source_node_id: e.source_node_id.toString(),
+          target_node_id: e.target_node_id.toString(),
+          relationship_type: e.relationship_type,
+          confidence: e.confidence,
+          evidence: e.evidence || '',
+        })),
+        papers: [],
+        total_papers_in_corpus: 1,
+      };
+
+      const reasoningInputStr = JSON.stringify(reasoningInput);
+      const inputSize = reasoningInputStr.length;
+      const graphSnapshotHash = computeDerivedHash(
+        'graph_snapshot',
+        reasoningInput,
+        SCHEMA_VERSIONS.insight,
+        PROMPT_VERSIONS.reasoning
+      );
+      logger.info(`[Reasoning] Input size: ${inputSize} chars`);
+
+      insights = await runAgent<InsightOutput>(
+        'Reasoning',
+        REASONING_PROMPT,
+        reasoningInputStr,
+        InsightSchema,
+        REASONING_CONFIG,
+        logger,
+        {
+          input: reasoningInput,
+          promptVersion: PROMPT_VERSIONS.reasoning,
+          schemaVersion: SCHEMA_VERSIONS.insight,
+          provider: 'gemini',
+          modelOverride: AGENT_MODELS.reasoning,
+        }
+      );
+
+      logger.info(`[Reasoning] Generated ${insights.insights.length} insights`);
+
+      await dbClient.insertInsights(
+        insights.insights.map((ins) => ({
+          insight_type: ins.insight_type,
+          subject_nodes: ins.subject_nodes.map((id) => Number(id)).filter((n) => !Number.isNaN(n)),
+          reasoning_path: {
+            ...(ins.reasoning_path || {}),
+            meta: {
+              batch_id: `per-paper-${ingested.paper_id}`,
+              graph_snapshot_hash: graphSnapshotHash,
+            },
+          },
+          confidence: ins.confidence,
+        }))
+      );
+    }
 
     const processingTime = Date.now() - startTime;
+    const cacheStats = getCacheStats();
+
+    const cacheReport = Object.entries(cacheStats)
+      .map(([type, stats]) => `${type}: ${stats.hits}H/${stats.misses}M`)
+      .join(', ');
+
+    logger.info(`[Pipeline] Cache: ${cacheReport || 'none'}`);
+    logger.info(`[Pipeline] Total time: ${processingTime}ms`);
 
     return {
       success: true,
@@ -417,15 +712,16 @@ export async function runPipeline(
       stats: {
         sectionsExtracted: ingested.sections.length,
         entitiesExtracted: entities.entities.length,
-        edgesExtracted: edges.edges.length,
+        edgesExtracted: coreRelationships.relationships.length,
         entitiesApproved: entityStats.approved,
         entitiesFlagged: entityStats.flagged,
         entitiesRejected: entityStats.rejected,
         edgesApproved: edgeStats.approved,
         edgesFlagged: edgeStats.flagged,
         edgesRejected: edgeStats.rejected,
-        insightsGenerated: insights.insights.length,
+        insightsGenerated: insights?.insights.length ?? 0,
         processingTimeMs: processingTime,
+        reasoningSkipped: insights === null,
       },
     };
   } catch (error) {
@@ -472,6 +768,7 @@ export async function runPipeline(
         edgesRejected: 0,
         insightsGenerated: 0,
         processingTimeMs: processingTime,
+        reasoningSkipped: !runReasoning,
       },
     };
   }

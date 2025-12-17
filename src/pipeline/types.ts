@@ -20,6 +20,7 @@ export interface PipelineResult {
     edgesRejected: number;
     insightsGenerated: number;
     processingTimeMs: number;
+    reasoningSkipped?: boolean;
   };
   error?: string;
 }

@@ -43,6 +43,35 @@ export const EntitySchema = z.object({
 
 export type EntityOutput = z.infer<typeof EntitySchema>;
 
+export const RelationshipCoreSchema = z.object({
+  relationships: z
+    .array(
+      z.object({
+        source_canonical_name: z.string(),
+        target_canonical_name: z.string(),
+        relationship_type: z.string(),
+        confidence: z.number().min(0).max(1),
+      })
+    )
+    .max(12),
+});
+
+export type RelationshipCoreOutput = z.infer<typeof RelationshipCoreSchema>;
+
+export const RelationshipEvidenceSchema = z.object({
+  evidence: z.array(
+    z.object({
+      edge_key: z.string(),
+      evidence: z.string().max(300),
+      section_id: z.number().int().optional(),
+      section_type: z.string().optional(),
+      part_index: z.number().int().optional(),
+    })
+  ),
+});
+
+export type RelationshipEvidenceOutput = z.infer<typeof RelationshipEvidenceSchema>;
+
 export const EdgeSchema = z.object({
   edges: z.array(
     z.object({
@@ -116,4 +145,3 @@ export const InsightSchema = z.object({
 });
 
 export type InsightOutput = z.infer<typeof InsightSchema>;
-

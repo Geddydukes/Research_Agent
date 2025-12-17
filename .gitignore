@@ -9,3 +9,7 @@ dist/
 
 downloads/
 
+.cache/
+
+api/
+api/services/

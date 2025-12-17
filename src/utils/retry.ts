@@ -27,7 +27,12 @@ export async function withRetry<T>(
       }
       const jitter = Math.floor(Math.random() * 250);
       const delay = Math.min(maxMs, baseMs * Math.pow(2, i)) + jitter;
-      await new Promise((r) => setTimeout(r, delay));
+      await new Promise<void>((r) => {
+        const timer = setTimeout(() => r(), delay);
+        if (timer.unref) {
+          timer.unref();
+        }
+      });
     }
   }
   throw lastErr;

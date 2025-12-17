@@ -3,6 +3,7 @@ import { SemanticScholarClient } from './client';
 import { EmbeddingsClient } from '../../embeddings/embed';
 import { cosineSimilarity, normalizeTextForEmbedding } from '../../embeddings/similarity';
 import { withRetry } from '../../utils/retry';
+import { extractArxivId, searchArxivByTitle } from '../arxiv/util';
 
 export type SelectionReason =
   | 'seed'
@@ -28,6 +29,8 @@ type SelectionConfig = {
   keywordLimitPerQuery: number;
   candidatePoolMax: number;
   embeddingsModel: string;
+  resolveArxivByTitle: boolean;
+  arxivTitleThreshold: number;
 };
 
 export const defaultSelectionConfig: SelectionConfig = {
@@ -45,6 +48,8 @@ export const defaultSelectionConfig: SelectionConfig = {
   keywordLimitPerQuery: 60,
   candidatePoolMax: 300,
   embeddingsModel: 'gemini-embedding-001',
+  resolveArxivByTitle: true,
+  arxivTitleThreshold: 0.6,
 };
 
 function yearWeight(year?: number): number {
@@ -55,6 +60,17 @@ function yearWeight(year?: number): number {
 
 function isPaperUsable(p: SSPaper): boolean {
   return Boolean(p.paperId && p.title && (p.abstract?.trim()?.length ?? 0) > 0 && p.year);
+}
+
+async function attachArxivId(p: SSPaper, cfg: SelectionConfig): Promise<string | null> {
+  const direct = extractArxivId(p);
+  if (direct) return direct;
+
+  if (cfg.resolveArxivByTitle && p.title) {
+    const id = await searchArxivByTitle(p.title);
+    if (id) return id;
+  }
+  return null;
 }
 
 export async function selectCorpus(params: {
@@ -218,9 +234,16 @@ export async function selectCorpus(params: {
 
   const selected = Array.from(selectedMap.values());
 
+  // Attempt to attach arXiv IDs where possible (normalize + title search fallback)
+  const withArxivPromises = selected.map(async (p) => {
+    const arxivId = await attachArxivId(p, cfg);
+    return { ...p, arxivId };
+  });
+  const withArxiv = await Promise.all(withArxivPromises);
+
   return {
     seed,
-    selected,
+    selected: withArxiv,
     debug: {
       candidateCount: candidatesAll.length,
       citationCount: citing.length,

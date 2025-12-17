@@ -111,7 +111,7 @@ export interface InsertInferredInsight {
 }
 
 export class DatabaseClient {
-  private client: SupabaseClient;
+  public client: SupabaseClient;
 
   constructor(url: string, serviceRoleKey: string) {
     this.client = createClient(url, serviceRoleKey);
@@ -129,6 +129,49 @@ export class DatabaseClient {
     }
 
     return data as Paper;
+  }
+
+  async upsertPaper(paper: InsertPaper): Promise<Paper> {
+    const { data, error } = await this.client
+      .from('papers')
+      .upsert(paper, { onConflict: 'paper_id' })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to upsert paper: ${error.message}`);
+    }
+
+    return data as Paper;
+  }
+
+  async getExistingPaperIds(paperIds: string[]): Promise<Set<string>> {
+    if (paperIds.length === 0) return new Set();
+    
+    const { data, error } = await this.client
+      .from('papers')
+      .select('paper_id')
+      .in('paper_id', paperIds);
+
+    if (error) {
+      throw new Error(`Failed to get existing papers: ${error.message}`);
+    }
+
+    return new Set((data || []).map((p: { paper_id: string }) => p.paper_id));
+  }
+
+  async paperExists(paperId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from('papers')
+      .select('paper_id')
+      .eq('paper_id', paperId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(`Failed to check paper existence: ${error.message}`);
+    }
+
+    return data !== null;
   }
 
   async insertPaperSections(sections: InsertPaperSection[]): Promise<PaperSection[]> {
@@ -210,6 +253,42 @@ export class DatabaseClient {
     return data as Edge[];
   }
 
+  async updateEdgeEvidence(
+    edgeId: number,
+    evidence: string,
+    provenance: Record<string, unknown>
+  ): Promise<void> {
+    const { error } = await this.client
+      .from('edges')
+      .update({
+        evidence: evidence.slice(0, 300),
+        provenance,
+      })
+      .eq('id', edgeId);
+
+    if (error) {
+      throw new Error(`Failed to update edge evidence: ${error.message}`);
+    }
+  }
+
+  async updateEdgesEvidence(
+    updates: Array<{
+      edgeId: number;
+      evidence: string;
+      provenance: Record<string, unknown>;
+    }>
+  ): Promise<void> {
+    if (updates.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      updates.map((update) =>
+        this.updateEdgeEvidence(update.edgeId, update.evidence, update.provenance)
+      )
+    );
+  }
+
   async insertEntityMentions(mentions: InsertEntityMention[]): Promise<EntityMention[]> {
     if (mentions.length === 0) {
       return [];
@@ -242,6 +321,77 @@ export class DatabaseClient {
     }
 
     return data as InferredInsight[];
+  }
+
+  async getEdgeModal(edgeId: number): Promise<{
+    edge: Edge;
+    source_node: Node | null;
+    target_node: Node | null;
+    source_paper: Paper | null;
+    target_paper: Paper | null;
+  } | null> {
+    const { data, error } = await this.client
+      .from('edges')
+      .select('*')
+      .eq('id', edgeId)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(`Failed to get edge modal: ${error.message}`);
+    }
+
+    if (!data) return null;
+
+    const edge = data as Edge;
+    const meta = (edge.provenance as any)?.meta || {};
+    const sourcePaperId = meta.source_paper_id as string | undefined;
+    const targetPaperId = meta.target_paper_id as string | undefined;
+
+    const [sourceNode, targetNode, sourcePaper, targetPaper] = await Promise.all([
+      this.client.from('nodes').select('*').eq('id', edge.source_node_id).maybeSingle(),
+      this.client.from('nodes').select('*').eq('id', edge.target_node_id).maybeSingle(),
+      sourcePaperId
+        ? this.client.from('papers').select('*').eq('paper_id', sourcePaperId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      targetPaperId
+        ? this.client.from('papers').select('*').eq('paper_id', targetPaperId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    if (sourceNode.error) throw new Error(`Failed to get source node: ${sourceNode.error.message}`);
+    if (targetNode.error) throw new Error(`Failed to get target node: ${targetNode.error.message}`);
+    if (sourcePaper.error) throw new Error(`Failed to get source paper: ${sourcePaper.error.message}`);
+    if (targetPaper.error) throw new Error(`Failed to get target paper: ${targetPaper.error.message}`);
+
+    return {
+      edge,
+      source_node: (sourceNode.data as Node) || null,
+      target_node: (targetNode.data as Node) || null,
+      source_paper: (sourcePaper.data as Paper) || null,
+      target_paper: (targetPaper.data as Paper) || null,
+    };
+  }
+
+  async getInsightsForEdge(edgeId: number): Promise<InferredInsight[]> {
+    // Fetch edge to get involved nodes
+    const edgeModal = await this.getEdgeModal(edgeId);
+    if (!edgeModal) return [];
+    const { edge } = edgeModal;
+    const nodeIds = [edge.source_node_id, edge.target_node_id].filter(
+      (v): v is number => typeof v === 'number'
+    );
+
+    const { data, error } = await this.client
+      .from('inferred_insights')
+      .select('*')
+      .overlaps('subject_nodes', nodeIds);
+
+    if (error) {
+      throw new Error(`Failed to get insights for edge: ${error.message}`);
+    }
+
+    return (data || []) as InferredInsight[];
   }
 
   async getNodesForPaper(paperId: string): Promise<Node[]> {
@@ -282,8 +432,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('edges')
       .select('*')
-      .in('source_node_id', nodeIds)
-      .in('target_node_id', nodeIds);
+      .or(`source_node_id.in.(${nodeIds.join(',')}),target_node_id.in.(${nodeIds.join(',')})`);
 
     if (error) {
       throw new Error(`Failed to get edges for paper: ${error.message}`);
@@ -334,6 +483,36 @@ export class DatabaseClient {
     return data as Node;
   }
 
+  async findNodesByCanonicalNames(
+    pairs: Array<{ canonical_name: string; type: string }>
+  ): Promise<Map<string, Node>> {
+    if (pairs.length === 0) {
+      return new Map();
+    }
+
+    const conditions = pairs.map(
+      (p) => `canonical_name.eq.${p.canonical_name}.and.type.eq.${p.type}`
+    );
+    const orCondition = conditions.join(',');
+
+    const { data, error } = await this.client
+      .from('nodes')
+      .select('*')
+      .or(orCondition);
+
+    if (error) {
+      throw new Error(`Failed to find nodes: ${error.message}`);
+    }
+
+    const result = new Map<string, Node>();
+    for (const node of (data || []) as Node[]) {
+      const key = `${node.canonical_name}|${node.type}`;
+      result.set(key, node);
+    }
+
+    return result;
+  }
+
   async getPaperSections(paperId: string): Promise<PaperSection[]> {
     const { data, error } = await this.client
       .from('paper_sections')
@@ -362,6 +541,139 @@ export class DatabaseClient {
     if (error) {
       throw new Error(`Failed to upsert node type: ${error.message}`);
     }
+  }
+
+  /**
+   * Get node by ID - for API use
+   */
+  async getNodeById(nodeId: number): Promise<Node | null> {
+    const { data, error } = await this.client
+      .from('nodes')
+      .select('*')
+      .eq('id', nodeId)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(`Failed to get node: ${error.message}`);
+    }
+
+    return data as Node | null;
+  }
+
+  /**
+   * Get edges for a node - for API use
+   */
+  async getEdgesForNode(nodeId: number): Promise<Edge[]> {
+    const { data, error } = await this.client
+      .from('edges')
+      .select('*')
+      .or(`source_node_id.eq.${nodeId},target_node_id.eq.${nodeId}`);
+
+    if (error) {
+      throw new Error(`Failed to get edges: ${error.message}`);
+    }
+
+    return (data || []) as Edge[];
+  }
+
+  /**
+   * Get all papers with pagination - for API use
+   */
+  async getAllPapers(params: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Paper[]; count: number }> {
+    const page = params.page || 1;
+    const limit = Math.min(params.limit || 50, 100);
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await this.client
+      .from('papers')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new Error(`Failed to get papers: ${error.message}`);
+    }
+
+    return {
+      data: (data || []) as Paper[],
+      count: count || 0,
+    };
+  }
+
+  /**
+   * Get all edges with pagination - for API use
+   */
+  async getAllEdges(params: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Edge[]; count: number }> {
+    const page = params.page || 1;
+    const limit = Math.min(params.limit || 50, 100);
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await this.client
+      .from('edges')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new Error(`Failed to get edges: ${error.message}`);
+    }
+
+    return {
+      data: (data || []) as Edge[],
+      count: count || 0,
+    };
+  }
+
+  /**
+   * Get all insights with pagination - for API use
+   */
+  async getAllInsights(params: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: InferredInsight[]; count: number }> {
+    const page = params.page || 1;
+    const limit = Math.min(params.limit || 50, 100);
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await this.client
+      .from('inferred_insights')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new Error(`Failed to get insights: ${error.message}`);
+    }
+
+    return {
+      data: (data || []) as InferredInsight[],
+      count: count || 0,
+    };
+  }
+
+  /**
+   * Get insight by ID - for API use
+   */
+  async getInsightById(insightId: number): Promise<InferredInsight | null> {
+    const { data, error } = await this.client
+      .from('inferred_insights')
+      .select('*')
+      .eq('id', insightId)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(`Failed to get insight: ${error.message}`);
+    }
+
+    return data as InferredInsight | null;
   }
 }
 
