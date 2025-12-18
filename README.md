@@ -1,212 +1,102 @@
-# Agentic Research Knowledge Graph
+# AI Research Discovery Agent
 
-A TypeScript backend for a 5-agent pipeline that processes academic papers into a semantic knowledge graph.
+This repository contains my submission for the **AI Engineer take-home assignment**, focused on building an agentic system for research discovery.
 
-## Architecture
+This project addresses a core problem in modern research workflows: academic papers encode rich semantic claims, but those claims are not structured in a way that supports reliable discovery, comparison, or reasoning.
 
-The system consists of 5 sequential agents with strict boundaries:
+In fast-moving domains such as computer vision, researchers face three fundamental challenges:
 
-1. **Ingestion Agent**: Parses papers into structured sections (verbatim extraction, no semantics)
-2. **Entity Extraction Agent**: Extracts max 10 entities per paper (max 4 per section, max 2 metrics)
-3. **Relationship Extraction Agent**: Proposes edges with strict evidence and named baselines
-4. **Validation Agent**: Enforces graph invariants with confidence tracking
-5. **Graph Reasoning Agent**: Infers non-obvious insights with deduplication and corpus dampening
+- **Information Overload**  
+  Thousands of papers are published monthly, far beyond what any individual can read.
 
-## Features
+- **Implicit Structure**  
+  Relationships such as *introduces*, *improves on*, or *evaluates* are expressed in prose, not as queriable data.
 
-- **Agent isolation**: Agents cannot see each other's internals
-- **Failure isolation**: One paper fails, pipeline continues
-- **Schema validation**: All outputs validated against Zod schemas
-- **Retry with feedback**: Max 2 retries with schema error injection
-- **Timeouts**: 30s per agent call
-- **Precision over recall**: Better to miss than hallucinate
-- **Auditability**: Full provenance and confidence tracking
+- **Low-Trust Automation**  
+  Naive “Chat with PDF” or vector-search approaches surface results quickly but provide no guarantees about correctness, provenance, or global consistency.
 
-## Prerequisites
+A system that merely retrieves or summarizes papers is insufficient. To support real research discovery, the output must be **structured, auditable, and trustworthy at scale**.
 
-- Node.js 20+
-- TypeScript 5.0+
-- Supabase account and project
-- Anthropic API key
+---
 
-## Setup
+## Design Thesis
 
-### 1. Install Dependencies
+This system is built around a simple principle:
 
-```bash
-npm install
-```
+**Use LLMs for probabilistic extraction, but never for authority.**
 
-### 2. Configure Environment Variables
+Large Language Models are well suited to reading messy, unstructured text and proposing candidate entities and relationships. However, they are non-deterministic, susceptible to hallucination, and unreliable at enforcing global constraints such as graph topology.
 
-Create a `.env` file in the project root:
+To address this, the architecture deliberately separates concerns:
 
-```bash
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-SUPABASE_URL=your_supabase_url_here
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
-```
+- **Probabilistic Extraction**  
+  Stateless LLM agents (Gemini 1.5 Pro / Flash) identify candidate entities and semantic relationships from paper text.
 
-### 3. Set Up Database
+- **Deterministic Validation**  
+  All extracted data is treated as untrusted input. Strict, code-based validation logic enforces canonicalization, confidence thresholds, structural invariants, and provenance before any mutation of the graph.
 
-1. Create a new Supabase project or use an existing one
-2. Run the SQL schema from `src/db/schema.sql` in your Supabase SQL editor
-3. Run migrations to seed node types:
+This separation allows the system to scale ingestion while preserving correctness, explainability, and long-term maintainability.
 
-```bash
-npm run migrate
-```
+---
 
-### 4. Build the Project
+## What the System Does
 
-```bash
-npm run build
-```
+At a high level, the system operates as a bounded pipeline:
 
-## Usage
+- **Semantic Gating**  
+  Candidate papers are embedded and strictly gated based on cosine similarity to a seed paper, ensuring compute is only spent on relevant literature.
 
-### Process a Paper
+- **Structured Extraction**  
+  Specialized agents extract entities (Methods, Concepts, Datasets, Metrics) and relationships using a fixed, strictly typed vocabulary (e.g., `improves_on`, `extends`).
 
-```typescript
-import { runPipeline, createDatabaseClient } from './dist/index';
+- **Safety & Persistence**  
+  Deterministic rules reject low-confidence edges, penalize orphan entities, and catch self-references before persisting validated data to a Postgres graph schema.
 
-const db = createDatabaseClient();
-const result = await runPipeline({
-  paper_id: '2308.04079',
-  title: '3D Gaussian Splatting for Real-Time Radiance Field Rendering',
-  raw_text: 'Abstract\n\nWe introduce 3D Gaussian Splatting...',
-  metadata: {
-    year: 2023,
-    authors: ['Kerbl', 'Kopanas', 'Leimkühler'],
-  },
-}, db);
+- **Incremental Reasoning**  
+  An optional reasoning agent identifies multi-hop insights over bounded subgraphs, ensuring explainability without unbounded cost growth.
 
-if (result.success) {
-  console.log('Stats:', result.stats);
-}
-```
+---
 
-### Run Example
+## Documentation Guide
 
-```bash
-npm run dev
-```
+This README provides a high-level orientation. Detailed architecture, validation logic, trade-offs, and diagrams are documented separately to keep this overview clean:
 
-## Testing
+- **SYSTEM_ARCHITECTURE_OVERVIEW.md** 
+- **LIMITATIONS_AND_TRADEOFFS.md**   
+- **DESIGN_RATIONALE.md** 
+- **FUTURE_ROADMAP.md** 
 
-### Run Unit Tests
+---
 
-```bash
-npm test
-```
+> **Note on Visualization**  
+> A lightweight, read-only graph visualization was built as an internal debugging and data model validation aid. Its purpose was to sanity-check extracted entities, relationships, confidence signals, and provenance during development—not to serve as a production UI. This helped validate that the entity-first data model and deterministic validation rules produce a graph that is navigable and interpretable without additional transformation.
 
-### Run Integration Tests
+---
 
-```bash
-# Make sure environment variables are set
-ts-node tests/agent.test.ts
-ts-node tests/pipeline.test.ts
-```
+## Example SQL Queries
 
-## Project Structure
+The submission includes a set of **runnable Postgres queries** demonstrating common research-discovery workflows, including the take-home prompt example:
 
-```
-Research_agent/
-├── src/
-│   ├── agents/
-│   │   ├── config.ts          # Agent configuration
-│   │   ├── schemas.ts          # Zod schemas for all agents
-│   │   ├── runAgent.ts         # Core agent execution with retry logic
-│   │   ├── errors.ts           # Custom error types
-│   │   └── prompts/           # Agent prompts (replace with revised prompts)
-│   ├── db/
-│   │   ├── schema.sql          # Database schema
-│   │   ├── client.ts           # Supabase client with typed queries
-│   │   └── migrations.ts       # Database migrations
-│   ├── pipeline/
-│   │   ├── runPipeline.ts      # Main pipeline orchestration
-│   │   └── types.ts            # Pipeline types
-│   └── index.ts                # Main entry point
-├── tests/
-│   ├── fixtures/
-│   │   └── sample_paper.json   # Sample paper for testing
-│   ├── agent.test.ts           # Agent unit tests
-│   └── pipeline.test.ts        # End-to-end pipeline tests
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+> *Which papers improve on the original 3D Gaussian Splatting method?*
 
-## Database Schema
+See: `sql/queries.sql` for complete, executable examples grounded in the implemented schema.
 
-The system uses the following main tables:
+---
 
-- `papers`: Paper metadata
-- `paper_sections`: Extracted sections from papers
-- `nodes`: Entities (methods, datasets, metrics, etc.)
-- `edges`: Relationships between entities
-- `entity_mentions`: Tracks which papers mention which entities
-- `inferred_insights`: Insights generated by the reasoning agent
-- `node_type_registry`: Registry of valid entity types
+## Tech Stack
 
-## Agent Configuration
+- **Runtime:** Node.js / TypeScript  
+- **Database:** PostgreSQL 
+- **LLMs:** Google Gemini 2.5 Pro & Flash 
+- **Validation:** Zod schemas & custom TypeScript logic  
+- **Embeddings:** `gemini-embedding-001`  
 
-Default configuration in `src/agents/config.ts`:
+---
 
-- `maxRetries`: 2
-- `timeoutMs`: 30000 (30 seconds)
-- `anthropicModel`: 'claude-sonnet-4-20250514'
-- `maxTokens`: 4000
+## Why This Matters
 
-Confidence thresholds:
-- `reject`: < 0.3
-- `review`: 0.3 - 0.6
-- `accept`: > 0.6
+In security-critical domains, automation fails when systems cannot be trusted, inspected, or audited.
 
-## Customizing Prompts
+While LLM-based tools can generate plausible summaries or answers, they do not produce artifacts that are suitable as sources of truth. In environments where decisions must be defensible, reproducible, and resilient to scale, probabilistic outputs alone are insufficient.
 
-Replace the placeholder prompts in `src/agents/prompts/` with your revised prompts. Each file exports a const string that is used as the system prompt for that agent.
-
-## Error Handling
-
-The pipeline uses structured error handling:
-
-- `TimeoutError`: Agent call exceeded timeout
-- `SchemaValidationError`: Schema validation failed after retries
-- `AgentExecutionError`: Other agent execution errors
-
-All errors are logged with context and the pipeline continues processing other papers.
-
-## Logging
-
-The system uses structured logging with prefixes:
-
-```
-[Ingestion] Processing paper_2308.04079 (attempt 1/3)
-[Ingestion] Success: 5 sections extracted in 2.3s
-[EntityExtraction] Extracted 8 entities with avg confidence 0.82
-[Validation] Approved: 7/8 entities, 12/15 edges (3 flagged for review)
-[Reasoning] Generated 4 insights (2 transitive, 1 cluster, 1 anomaly)
-```
-
-## Development
-
-### Type Safety
-
-The project uses strict TypeScript with:
-- `noImplicitAny`: true
-- `strictNullChecks`: true
-- All types inferred from Zod schemas
-
-### Code Style
-
-- Functional over OOP
-- Single responsibility per file
-- Exported consts for prompts/schemas
-- Comments explain why, not what
-
-## License
-
-MIT
-
-
+This project treats LLMs as probabilistic readers, not authorities. By enforcing structure, validation, and provenance in deterministic code, it produces a knowledge graph where every relationship is accountable to explicit evidence in the source material. The result is a system of record that supports inspection, audit, and long-term reasoning—properties that are essential not just for research discovery, but for building trustworthy AI systems in adversarial and high-stakes settings.

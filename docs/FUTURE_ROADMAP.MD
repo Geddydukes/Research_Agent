@@ -43,32 +43,39 @@ We utilize pgvector (within the existing Postgres DB) rather than a separate vec
 
 ## Phase 2: User Interface & Visualization (Months 3–6)
 
-**Objective:** Shift interaction from SQL queries to an Entity-First Knowledge Graph, prioritizing the structural relationships between methods over citation counts.
+**Objective:** Formalize and extend the internal visualization used for debugging and data model validation into a researcher-facing interface for exploring the entity-first knowledge graph, while preserving the system’s explainability and trust guarantees.
 
 ### Entity-First Visualization Architecture
 
 **Current:**  
-No frontend; access via DB client.
+A lightweight, read-only graph visualization exists as internal tooling (React + force-directed layout). It supports filtering, search, and inspection of extracted nodes and edges, and was used to validate that entities, relationship semantics, confidence scores, and provenance are navigable without additional transformation.
 
 **Future:**  
-A “Force-Directed” visualization (React/D3.js) where Nodes are strictly Concepts, Methods, or Metrics—not papers.
+Harden this tooling into a production-ready UI centered on **entities as the primary graph objects**:
 
-**Visual Hierarchy:**
-
-- **Primary Nodes:** Entities (colored by type: Blue = Methods, Green = Concepts)
-- **Secondary Details:** Papers are treated as “provenance layers” or satellite nodes visible only in detail panels or specific “Paper” filter modes
-- **Metrics Encoding:** Node size dynamically reflects degree centrality (visualizing the most influential concepts automatically)
+- **Primary Nodes:** Concepts, Methods, Datasets, Metrics (visually distinguished by type).
+- **Papers as Provenance:** Papers are surfaced contextually to explain *why* an edge exists (evidence excerpt, section type, confidence), and may optionally be rendered as “context nodes” in a dedicated mode for tracing attribution without letting paper nodes dominate the main graph.
+- **Structural Encoding:** Node emphasis encodes graph-derived signals (e.g., degree centrality or influence), surfacing important methods and concepts without relying on citation counts.
 
 ### Explainable Interaction Layer
 
-**Edge Inspection Modals:**  
-Clicking an edge (e.g., `IMPROVES`) opens a modal identifying the source paper, the exact evidence quote, and the validation confidence score. This prevents the graph from looking like a “black box.”
+- **Detail Panel:** Selecting any node reveals its relationships (direction, type, confidence) and associated provenance (source paper, section type, evidence excerpt).
+- **Edge Inspection:** Selecting an edge opens an inspection view showing the exact evidence supporting the relationship plus validation metadata, preventing the graph from behaving like a black box.
+- **Insight Integration:** Node detail surfaces related records from `inferred_insights` (e.g., cluster membership or transitive relationships) to bridge raw structure and reasoning outputs.
 
-**Role-Based Access:**  
-Distinguish between Observer (read-only exploration) and Curator (ability to verify flagged edges or manage insights) to protect the integrity of the public graph.
+### Exploration Controls
 
-**Insight Integration:**  
-The detail panel for any node surfaces related records from the `inferred_insights` table (e.g., “Central to ‘Novel View Synthesis’ cluster”), bridging the gap between raw data and reasoning.
+- Entity-type and relationship-type filters
+- Unconnected-node toggle to reduce visual noise under filtering
+- Search with match highlighting
+- Pan/zoom and optional clustering by entity type for macro-level navigation
+
+> **Exploratory Visualization (Internal Tooling):**  
+> A hosted, read-only visualization used during development to validate the data model and agent outputs is available at:  
+> https://research-agent-eta.vercel.app  
+>  
+> This interface is intentionally minimal and was used for debugging, inspection, and schema validation. It is not intended to represent a finished or production UI, but rather to demonstrate that the entity-first graph and provenance model are navigable and interpretable without additional transformation.
+
 
 ---
 

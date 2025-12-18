@@ -55,7 +55,7 @@ These limitations reflect the current maturity of the implementation and can be 
 Paper ingestion operates with conservative concurrency limits via lane-based rate limiters.
 
 **Impact:**  
-Throughput is limited to approximately 1–2 papers per minute.
+Throughput is typically limited to roughly 1–2 papers per minute under current concurrency constraints.
 
 **Acceptability:**  
 For a PoC targeting focused corpora (~100 papers), this simplifies failure isolation and database contention without introducing complex distributed queue infrastructure.

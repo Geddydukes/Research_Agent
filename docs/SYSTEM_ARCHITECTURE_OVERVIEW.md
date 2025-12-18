@@ -328,7 +328,7 @@ Diagram: Validation & Persistence
     ConfCheck1 -->|< 0.3| Rejected1[Rejected]
     
     Approved1 --> OrphanCheck{Orphan?<br/>Single Mention}
-    OrphanCheck -->|Yes| OrphanPenalty[Confidence × 0.5]
+    OrphanCheck -->|Yes| OrphanPenalty[Confidence - 0.10<br/>Additive Penalty]
     OrphanPenalty --> OrphanRecheck{Adjusted<br/>>= 0.6?}
     OrphanRecheck -->|Yes| Approved1
     OrphanRecheck -->|No| Flagged1

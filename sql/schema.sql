@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   metadata JSONB,
   original_confidence FLOAT,
   adjusted_confidence FLOAT,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  review_status TEXT CHECK (review_status IN ('approved', 'flagged', 'rejected')),
+  review_reasons TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -16,7 +18,9 @@ CREATE TABLE IF NOT EXISTS edges (
   confidence FLOAT NOT NULL,
   evidence TEXT,
   provenance JSONB,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  review_status TEXT CHECK (review_status IN ('approved', 'flagged', 'rejected')),
+  review_reasons TEXT
 );
 
 CREATE TABLE IF NOT EXISTS papers (
@@ -61,11 +65,13 @@ CREATE TABLE IF NOT EXISTS node_type_registry (
   description TEXT
 );
 
+-- Indexes
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_node_id);
+CREATE INDEX IF NOT EXISTS idx_edges_review_status ON edges(review_status);
 CREATE INDEX IF NOT EXISTS idx_entity_mentions_node ON entity_mentions(node_id);
 CREATE INDEX IF NOT EXISTS idx_entity_mentions_paper ON entity_mentions(paper_id);
 CREATE INDEX IF NOT EXISTS idx_paper_sections_paper ON paper_sections(paper_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
 CREATE INDEX IF NOT EXISTS idx_nodes_canonical_name ON nodes(canonical_name);
-
+CREATE INDEX IF NOT EXISTS idx_nodes_review_status ON nodes(review_status);
