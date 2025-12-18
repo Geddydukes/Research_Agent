@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "api": "node dist/api/server.js",
+    "api": "node dist/src/api/server.js",
     "api:dev": "tsx watch src/api/server.ts",
     "api:ts": "ts-node src/api/server.ts",
     "test": "jest",

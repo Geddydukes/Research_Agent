@@ -9,8 +9,8 @@ import {
 } from '../mocks/mockData';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-// Default to mock unless explicitly set to 'false'
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+// Use real API if VITE_API_URL is set, otherwise default to mock for local dev
+const USE_MOCK = import.meta.env.VITE_API_URL ? false : (import.meta.env.VITE_USE_MOCK !== 'false');
 
 class ApiClient {
     private baseUrl: string;
