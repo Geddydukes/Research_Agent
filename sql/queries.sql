@@ -22,9 +22,6 @@
 -- Purpose: Find all papers that claim to improve on the 3D Gaussian Splatting
 -- method, ordered by confidence and year.
 -- 
--- Note: This query finds relationships where '3d_gaussian_splatting' is the TARGET
--- (i.e., other methods/papers improve on it). Uses edge provenance to link to
--- source papers deterministically, avoiding entity_mentions join ambiguity.
 -- 
 -- Expected columns: paper_id, title, year, confidence, evidence, source_entity, source_type
 
@@ -55,8 +52,6 @@ LIMIT 10;
 -- fc54a8f8272688851fdd5dfbf9f1deacbe39eb30   | 4D-Rotor Gaussian Splatting: Towards Efficient Novel... | 2024 | 0.9        | null                                                                      | 4drotorgs       | Method
 -- 2501_11102v1                                | RDG-GS: Relative Depth Guidance with Gaussian Splatting  | 2025 | 0.85       | RDG-GS achieves state-of-the-art performance on Mip-NeRF360...            | rdg_gs          | Method
 --
--- Note: Query now uses provenance->'meta'->>'source_paper_id' for deterministic paper linkage,
--- avoiding entity_mentions join ambiguity. All results now have valid paper titles.
 
 -- ============================================================================
 -- QUERY 2: Concepts most central to the corpus (by edge degree)
@@ -64,9 +59,6 @@ LIMIT 10;
 -- Purpose: Identify the most central concepts in the knowledge graph by
 -- counting total edges (incoming + outgoing) and papers mentioning them.
 --
--- Note: Duplicates (e.g., "novel_view_synthesis" vs "novel-view synthesis",
--- "MipNeRF360" vs "Mip-NeRF 360") reflect intentional no-fuzzy-merge policy
--- for correctness over recall. See LIMITATIONS section in main report.
 --
 -- Expected columns: canonical_name, type, total_edges, papers_mentioning
 
@@ -105,9 +97,6 @@ LIMIT 20;
 -- Purpose: Find semantic relationships between entities (methods, concepts, etc.)
 -- with their evidence quotes and source paper information.
 --
--- Note: The database does not contain direct paper-to-paper edges. Instead,
--- edges connect entities (methods, concepts, datasets) that are mentioned in papers.
--- This query shows entity-to-entity relationships with evidence.
 --
 -- Expected columns: id, relationship_type, confidence, evidence, source/target
 -- entities and types, evidence_section, source_paper_id, source_paper_title
@@ -202,9 +191,6 @@ ORDER BY e.confidence DESC, p.year DESC;
 
 -- ACTUAL OUTPUT (executed on database):
 -- Result: Empty set (no methods found using 'mip_nerf_360' dataset with valid provenance)
--- 
--- Note: This may indicate the dataset name differs in the database (e.g., 'MipNeRF360'
--- vs 'mip_nerf_360'). Use Query 5b to see all method-dataset relationships.
 
 -- ============================================================================
 -- QUERY 5b: Methods that use any dataset (unfiltered)
@@ -259,8 +245,6 @@ ORDER BY n.canonical_name;
 -- Mip-NeRF 360          | Dataset
 -- MipNeRF360            | Dataset
 --
--- Note: This shows the canonicalization variations for what is conceptually the same
--- dataset. Use the exact canonical_name from this query in Query 5a's filter.
 
 -- ============================================================================
 -- QUERY 6: Papers with highest entity extraction yield
@@ -353,9 +337,6 @@ ORDER BY n.adjusted_confidence ASC;
 -- Purpose: Identify the most commonly used datasets for evaluation across
 -- the corpus, indicating benchmark popularity.
 --
--- Note: Duplicates (e.g., "MipNeRF360" vs "Mip-NeRF 360", "Tanks and Temples"
--- vs "Tanks&Temples") reflect intentional no-fuzzy-merge policy for correctness
--- over recall. See LIMITATIONS section in main report.
 --
 -- Expected columns: dataset_name, evaluation_count, papers_evaluating,
 -- avg_confidence
@@ -388,9 +369,6 @@ LIMIT 10;
 -- datasets, which may indicate incomplete extraction or missing evaluation
 -- sections.
 --
--- Note: Uses edge provenance to identify source papers, making this query
--- robust regardless of whether Paper nodes exist. This matches Query 3's
--- approach of using provenance as the authoritative paper source.
 --
 -- Expected columns: paper_id, title, year, improves_on_count, evaluates_count
 
@@ -418,16 +396,11 @@ ORDER BY improves_on_count DESC;
 -- 395bfdae59f1a5fde16213cade43d2587e4565df   | 4D Gaussian Splatting for Real-Time Dynamic Scene...     | 2024 | 2                 | 0
 -- 941ada3e24e6f54bb49cfaeff998f4f5cbac5a38   | Speedy-Splat: Fast 3D Gaussian Splatting with Sparse...  | 2024 | 2                 | 0
 -- 9c0d40f01ced7d425cb6145e9f961c6e44a478a8   | 2D Gaussian Splatting for Geometrically Accurate...     | 2024 | 2                 | 0
--- 
--- Note: Query now uses edge provenance to identify source papers, making it robust regardless
--- of whether Paper nodes exist. These papers have improves_on relationships but no evaluates
--- relationships to datasets, which may indicate incomplete extraction or missing evaluation sections.
 
 -- ============================================================================
 -- QUERY 11: Evidence coverage analysis
 -- ============================================================================
 -- Purpose: Measure how complete evidence enrichment is across the knowledge graph.
--- This turns potential concerns about null evidence into a deliberate measurement.
 --
 -- Expected columns: relationship_type, total_edges, edges_with_evidence,
 -- edges_without_evidence, evidence_coverage_pct
@@ -487,19 +460,11 @@ LIMIT 20;
 
 -- ACTUAL OUTPUT (executed on database):
 -- Result: Empty set (no edges found with confidence 0.3-0.6 and valid source_paper_id)
--- 
--- Note: This indicates validation is likely filtering low-confidence edges, or
--- low-confidence edges are missing provenance. Either outcome is consistent with
--- a quality-first ingestion strategy. The empty result suggests that edges passing
--- validation have confidence >= 0.6, which aligns with the validation rules that
--- reject edges below confidence thresholds.
 
 -- ============================================================================
 -- QUERY 13: Provenance coverage analysis
 -- ============================================================================
--- Purpose: Measure how complete provenance metadata is across edges. Since
--- provenance.meta.source_paper_id is critical for paper linkage in queries,
--- this validates that provenance is a first-class guarantee.
+-- Purpose: Measure how complete provenance metadata is across edges.
 --
 -- Expected columns: relationship_type, total_edges, edges_with_source_paper_id,
 -- edges_without_source_paper_id, provenance_coverage_pct
@@ -530,9 +495,7 @@ ORDER BY provenance_coverage_pct DESC, total_edges DESC;
 -- ============================================================================
 -- QUERY 14: Potential duplicate papers (by normalized title)
 -- ============================================================================
--- Purpose: Identify papers that may be duplicates based on normalized title
--- comparison. This reinforces the intentional no-fuzzy-merge policy and shows
--- a path to resolution for future entity resolution improvements.
+-- Purpose: Identify papers that may be duplicates based on normalized title comparison.
 --
 -- Expected columns: normalized_title, paper_count, paper_ids, titles
 
@@ -554,16 +517,7 @@ LIMIT 10;
 -- 3dgaussiansplattingforrealtimeradiancefieldrendering | 3 | {2308_04079v1, 2308.04079, 2cc1d857e86d...} | {3D Gaussian Splatting for Real-Time Radiance Field Rendering}
 -- 4dgaussiansplattingforrealtimedynamicscenerendering | 2 | {2310_08528v3, 395bfdae59f1a5fde16213cade43d2587e4565df} | {4D Gaussian Splatting for Real-Time Dynamic Scene Rendering}
 -- deblurring3dgaussiansplatting | 2 | {2401_00834v3, 65902a95d5af409938b28b69808e916f8ef9e0bd} | {Deblurring 3D Gaussian Splatting}
---
--- Note: These represent the same papers ingested from different sources (e.g., arXiv
--- vs Semantic Scholar) with different paper_id formats. The no-fuzzy-merge policy
--- preserves correctness by keeping them separate, but this query enables future
--- entity resolution improvements.
 
 -- ============================================================================
 -- END OF QUERIES
--- ============================================================================
--- Note: These queries assume the database has been populated with papers,
--- entities, edges, and insights. Results will vary based on the actual data
--- in your database.
 -- ============================================================================
