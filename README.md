@@ -61,10 +61,10 @@ At a high level, the system operates as a bounded pipeline:
 
 This README provides a high-level orientation. Detailed architecture, validation logic, trade-offs, and diagrams are documented separately to keep this overview clean:
 
-- **SYSTEM_ARCHITECTURE_OVERVIEW.md** 
-- **LIMITATIONS_AND_TRADEOFFS.md**   
-- **DESIGN_RATIONALE.md** 
-- **FUTURE_ROADMAP.md** 
+- **[SYSTEM_ARCHITECTURE_OVERVIEW.md](docs/SYSTEM_ARCHITECTURE_OVERVIEW.md)** 
+- **[LIMITATIONS_AND_TRADEOFFS.md](docs/LIMITATIONS_AND_TRADEOFFS.md)**   
+- **[DESIGN_RATIONALE.md](docs/DESIGN_RATIONALE.md)** 
+- **[FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.md)** 
 
 ---
 
@@ -79,7 +79,7 @@ The submission includes a set of **runnable Postgres queries** demonstrating com
 
 > *Which papers improve on the original 3D Gaussian Splatting method?*
 
-See: `sql/queries.sql` for complete, executable examples grounded in the implemented schema.
+See: **[`sql/queries.sql`](sql/qeuries.sql)** for complete, executable examples grounded in the implemented schema.
 
 ---
 
