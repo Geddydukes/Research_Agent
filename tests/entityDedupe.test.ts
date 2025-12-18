@@ -26,8 +26,8 @@ describe('Entity deduplication and batch operations', () => {
     );
 
     (mockDb.insertNodes as jest.MockedFunction<DatabaseClient['insertNodes']>).mockResolvedValue([
-      { id: 2, canonical_name: 'entity_b', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
-      { id: 3, canonical_name: 'entity_c', type: 'Method', metadata: null, original_confidence: null, adjusted_confidence: null, created_at: '2024-01-01' },
+      { id: 2, canonical_name: 'entity_b', type: 'Entity', metadata: null, original_confidence: null, adjusted_confidence: null, review_status: 'approved', review_reasons: null, created_at: '2024-01-01' },
+      { id: 3, canonical_name: 'entity_c', type: 'Method', metadata: null, original_confidence: null, adjusted_confidence: null, review_status: 'approved', review_reasons: null, created_at: '2024-01-01' },
     ]);
 
     (mockDb.insertEntityMentions as jest.MockedFunction<DatabaseClient['insertEntityMentions']>).mockResolvedValue([]);

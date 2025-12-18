@@ -1,7 +1,18 @@
 import { useEffect } from 'react';
 import { useEdgeModal, useEdgeInsights } from '../../hooks/useGraphData';
 import { useGraphStore } from '../../stores/graphStore';
+import type { Entity } from '../../types';
 import styles from './Modal.module.css';
+
+// Helper to get display name for entity
+function getEntityDisplayName(entity: Entity | null | undefined): string {
+    if (!entity) return 'Unknown';
+    const isPaper = entity.type.toLowerCase() === 'paper';
+    if (isPaper && entity.metadata?.title) {
+        return entity.metadata.title as string;
+    }
+    return entity.canonical_name;
+}
 
 interface EdgeModalProps {
     edgeId: number;
@@ -71,7 +82,7 @@ export function EdgeModal({ edgeId, onClose }: EdgeModalProps) {
 
                     <div className={styles.relationshipDisplay}>
                         <span className={styles.entityName}>
-                            {source_node?.canonical_name || 'Unknown'}
+                            {getEntityDisplayName(source_node)}
                         </span>
 
                         <div className={styles.relationshipArrow}>
@@ -86,7 +97,7 @@ export function EdgeModal({ edgeId, onClose }: EdgeModalProps) {
                         </div>
 
                         <span className={styles.entityName}>
-                            {target_node?.canonical_name || 'Unknown'}
+                            {getEntityDisplayName(target_node)}
                         </span>
                     </div>
 

@@ -103,7 +103,7 @@ export class GraphController {
   }
 
   async getReviewGraph(
-    request: FastifyRequest,
+    _request: FastifyRequest,
     reply: FastifyReply
   ) {
     const result = await this.graphService.getReviewGraph();

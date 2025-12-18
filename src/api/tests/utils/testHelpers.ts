@@ -296,6 +296,8 @@ export function createMockData() {
     metadata: { description: 'A test method' },
     original_confidence: 0.9,
     adjusted_confidence: 0.85,
+    review_status: 'approved',
+    review_reasons: null,
     created_at: new Date().toISOString(),
   };
 
@@ -306,6 +308,8 @@ export function createMockData() {
     metadata: { description: 'A test dataset' },
     original_confidence: 0.8,
     adjusted_confidence: 0.75,
+    review_status: 'approved',
+    review_reasons: null,
     created_at: new Date().toISOString(),
   };
 
@@ -316,6 +320,8 @@ export function createMockData() {
     metadata: { description: 'Accuracy metric' },
     original_confidence: 0.95,
     adjusted_confidence: 0.9,
+    review_status: 'approved',
+    review_reasons: null,
     created_at: new Date().toISOString(),
   };
 
@@ -328,6 +334,8 @@ export function createMockData() {
     confidence: 0.9,
     evidence: 'Paper mentions using this dataset',
     provenance: { source_paper_id: 'test-paper-1' },
+    review_status: 'approved',
+    review_reasons: null,
     created_at: new Date().toISOString(),
   };
 
@@ -339,6 +347,8 @@ export function createMockData() {
     confidence: 0.85,
     evidence: 'Method evaluated with accuracy',
     provenance: { source_paper_id: 'test-paper-1' },
+    review_status: 'approved',
+    review_reasons: null,
     created_at: new Date().toISOString(),
   };
 
