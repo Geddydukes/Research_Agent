@@ -79,7 +79,7 @@ The submission includes a set of **runnable Postgres queries** demonstrating com
 
 > *Which papers improve on the original 3D Gaussian Splatting method?*
 
-See: **[`sql/queries.sql`](sql/qeuries.sql)** for complete, executable examples grounded in the implemented schema.
+See: **[`sql/queries.sql`](sql/queries.sql)** for complete, executable examples grounded in the implemented schema.
 
 ---
 
