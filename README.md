@@ -62,9 +62,9 @@ At a high level, the system operates as a bounded pipeline:
 This README provides a high-level orientation. Detailed architecture, validation logic, trade-offs, and diagrams are documented separately to keep this overview clean:
 
 - **[SYSTEM_ARCHITECTURE_OVERVIEW.md](docs/SYSTEM_ARCHITECTURE_OVERVIEW.md)** 
-- **[LIMITATIONS_AND_TRADEOFFS.md](docs/LIMITATIONS_AND_TRADEOFFS.md)**   
+- **[LIMITATIONS_AND_TRADEOFFS.md](docs/LIMITATIONS_AND_TRADEOFFS.MD)**   
 - **[DESIGN_RATIONALE.md](docs/DESIGN_RATIONALE.md)** 
-- **[FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.md)** 
+- **[FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.MD)** 
 
 ---
 
