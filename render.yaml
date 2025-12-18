@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: research-agent-api
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run api
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: 3000
+      - key: API_HOST
+        value: 0.0.0.0

@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+*.log
+.git
+.gitignore
+*.md
+!README.md
+downloads
+.cache
+tests
+frontend
+*.test.ts
+*.test.d.ts
+*.test.d.ts.map
+scripts/test_*.ts
