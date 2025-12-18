@@ -1,0 +1,111 @@
+import { describe, it, expect, beforeEach } from '@jest/globals';
+import { createTestServer, createMockData, MockDatabaseClient } from './utils/testHelpers';
+
+describe('Papers API', () => {
+  let server: any;
+  let mockDb: MockDatabaseClient;
+
+  beforeEach(async () => {
+    mockDb = createMockData();
+    server = await createTestServer(mockDb);
+  });
+
+  describe('GET /api/papers', () => {
+    it('should return all papers with pagination', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.data).toBeDefined();
+      expect(body.pagination).toBeDefined();
+      expect(body.pagination.total).toBeGreaterThan(0);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+
+    it('should support pagination parameters', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers?page=1&limit=1',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.data.length).toBe(1);
+      expect(body.pagination.page).toBe(1);
+      expect(body.pagination.limit).toBe(1);
+    });
+  });
+
+  describe('GET /api/papers/:paperId', () => {
+    it('should return paper details', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers/test-paper-1',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.data).toBeDefined();
+      expect(body.data.paper_id).toBe('test-paper-1');
+      expect(body.data.title).toBe('Test Paper 1');
+    });
+
+    it('should return 404 for non-existent paper', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers/non-existent',
+      });
+
+      expect(response.statusCode).toBe(404);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBeDefined();
+      expect(body.error.code).toBe('PAPER_NOT_FOUND');
+    });
+  });
+
+  describe('GET /api/papers/:paperId/sections', () => {
+    it('should return paper sections', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers/test-paper-1/sections',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(Array.isArray(body.data)).toBe(true);
+      if (body.data.length > 0) {
+        expect(body.data[0].paper_id).toBe('test-paper-1');
+      }
+    });
+  });
+
+  describe('GET /api/papers/:paperId/nodes', () => {
+    it('should return nodes for a paper', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers/test-paper-1/nodes',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('GET /api/papers/:paperId/edges', () => {
+    it('should return edges for a paper', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/papers/test-paper-1/edges',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+  });
+});

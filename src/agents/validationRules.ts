@@ -6,6 +6,8 @@ type EntityDecision = ValidationOutput['validated_entities'][number];
 
 const CONFIDENCE_REJECT = 0.3;
 const CONFIDENCE_REVIEW = 0.6;
+const ORPHAN_PENALTY = 0.10; // Additive penalty for single-mention entities
+const VALIDATION_DEBUG = process.env.VALIDATION_DEBUG === '1';
 
 function levenshtein(a: string, b: string): number {
   const dp: number[][] = Array.from({ length: a.length + 1 }, () =>
@@ -49,6 +51,27 @@ function decideConfidence(
   return { decision: 'approved', reason: 'ok' };
 }
 
+function computeStats(values: number[]): {
+  min: number;
+  max: number;
+  mean: number;
+  p50: number;
+  p90: number;
+} {
+  if (values.length === 0) {
+    return { min: 0, max: 0, mean: 0, p50: 0, p90: 0 };
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  return {
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    mean: sum / sorted.length,
+    p50: sorted[Math.floor(sorted.length * 0.5)],
+    p90: sorted[Math.floor(sorted.length * 0.9)],
+  };
+}
+
 export function validateEntitiesAndEdges(
   entities: EntityOutput['entities'],
   edges: EdgeOutput['edges']
@@ -74,6 +97,9 @@ export function validateEntitiesAndEdges(
     counts.set(canonicalKey, (counts.get(canonicalKey) || 0) + 1);
   }
 
+  // Build set of valid canonical entity keys for edge validation
+  const validEntityKeys = new Set(canonicalEntityMap.keys());
+
   const entitiesByType = new Map<string, Array<{ ent: EntityOutput['entities'][0]; canonicalKey: string }>>();
   for (const ent of Array.from(canonicalEntityMap.values())) {
     const canonicalKey = getCanonical(ent.canonical_name);
@@ -96,23 +122,34 @@ export function validateEntitiesAndEdges(
     bucketsByType.set(type, buckets);
   }
 
-  const entityDecisions: EntityDecision[] = Array.from(canonicalEntityMap.values()).map((ent) => {
+  // First pass: compute adjusted confidence and collect duplicate groups
+  type EntityWithMetadata = {
+    ent: EntityOutput['entities'][0];
+    canonicalKey: string;
+    original: number;
+    adjusted: number;
+    mentionCount: number;
+    reasons: string[];
+    duplicateGroup?: Array<{ ent: EntityOutput['entities'][0]; canonicalKey: string }>;
+  };
+
+  const entityMetadata = new Map<string, EntityWithMetadata>();
+
+  for (const ent of Array.from(canonicalEntityMap.values())) {
     const canonicalKey = getCanonical(ent.canonical_name);
     const original = ent.original_confidence;
     const mentionCount = counts.get(canonicalKey) || 1;
+    const reasons: string[] = [];
+
+    // Apply orphan penalty: additive instead of multiplicative
     let adjusted = original;
-    let reason = 'ok';
-
     if (mentionCount <= 1) {
-      adjusted = Math.min(1, original * 0.5);
-      reason = 'orphan_entity:single_mention';
+      adjusted = Math.max(0, original - ORPHAN_PENALTY);
+      reasons.push('orphan_entity:single_mention');
     }
 
-    const confidenceDecision = decideConfidence(adjusted);
-    if (confidenceDecision.reason !== 'ok') {
-      reason = confidenceDecision.reason;
-    }
-
+    // Find duplicate candidates
+    const duplicateGroup: Array<{ ent: EntityOutput['entities'][0]; canonicalKey: string }> = [];
     const buckets = bucketsByType.get(ent.type);
     if (buckets) {
       const bucketKey = getBucketKey(canonicalKey);
@@ -121,27 +158,119 @@ export function validateEntitiesAndEdges(
       for (const candidate of candidates) {
         if (candidate.ent === ent) continue;
         if (levenshtein(canonicalKey, candidate.canonicalKey) < 3) {
-          if (confidenceDecision.decision === 'approved') {
-            reason = `duplicate_candidate:${candidate.ent.canonical_name}`;
-          }
-          break;
+          duplicateGroup.push(candidate);
         }
       }
     }
 
+    entityMetadata.set(canonicalKey, {
+      ent,
+      canonicalKey,
+      original,
+      adjusted,
+      mentionCount,
+      reasons,
+      duplicateGroup: duplicateGroup.length > 0 ? duplicateGroup : undefined,
+    });
+  }
+
+  // Second pass: resolve duplicates deterministically
+  const duplicateLosers = new Set<string>();
+  const processedGroups = new Set<string>();
+
+  for (const [canonicalKey, metadata] of entityMetadata) {
+    if (duplicateLosers.has(canonicalKey) || !metadata.duplicateGroup) continue;
+
+    // Build full duplicate group including self
+    const groupKeys = new Set<string>([canonicalKey]);
+    for (const candidate of metadata.duplicateGroup) {
+      const candidateKey = getCanonical(candidate.ent.canonical_name);
+      if (!duplicateLosers.has(candidateKey)) {
+        groupKeys.add(candidateKey);
+      }
+    }
+
+    if (groupKeys.size < 2) continue;
+
+    // Create a stable key for this group to avoid processing twice
+    const sortedKeys = Array.from(groupKeys).sort();
+    const groupKey = sortedKeys.join('|');
+    if (processedGroups.has(groupKey)) continue;
+    processedGroups.add(groupKey);
+
+    // Build group with metadata
+    const group = sortedKeys
+      .map((key) => {
+        const meta = entityMetadata.get(key);
+        return meta ? { canonicalKey: key, adjusted: meta.adjusted, metadata: meta } : null;
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null);
+
+    if (group.length < 2) continue;
+
+    // Pick winner: higher adjusted_confidence, tie-break lexicographically
+    group.sort((a, b) => {
+      if (Math.abs(a.adjusted - b.adjusted) > 0.001) {
+        return b.adjusted - a.adjusted;
+      }
+      return a.canonicalKey.localeCompare(b.canonicalKey);
+    });
+
+    const winner = group[0];
+    const losers = group.slice(1);
+
+    // Mark losers
+    for (const loser of losers) {
+      duplicateLosers.add(loser.canonicalKey);
+      loser.metadata.reasons.push(`duplicate_of:${winner.canonicalKey}`);
+      // Override decision: if winner is approved, loser is flagged; otherwise rejected
+      const winnerDecision = decideConfidence(winner.adjusted).decision;
+      if (winnerDecision === 'approved') {
+        loser.metadata.reasons.push('duplicate_loser:flagged');
+      } else {
+        loser.metadata.reasons.push('duplicate_loser:rejected');
+      }
+    }
+  }
+
+  // Third pass: build final entity decisions with composable reasons
+  const entityDecisions: EntityDecision[] = Array.from(entityMetadata.values()).map((metadata) => {
+    // Skip if marked as duplicate loser (will be handled below)
+    if (duplicateLosers.has(metadata.canonicalKey)) {
+      // Override decision based on duplicate resolution
+      const hasRejected = metadata.reasons.some((r) => r.includes('duplicate_loser:rejected'));
+      const decision = hasRejected ? 'rejected' : 'flagged';
+
+      return {
+        canonical_name: metadata.canonicalKey,
+        type: metadata.ent.type,
+        decision,
+        original_confidence: metadata.original,
+        adjusted_confidence: metadata.adjusted,
+        reason: metadata.reasons.join(';'),
+      };
+    }
+
+    const confidenceDecision = decideConfidence(metadata.adjusted);
+    if (confidenceDecision.reason !== 'ok') {
+      metadata.reasons.push(confidenceDecision.reason);
+    }
+
     return {
-      canonical_name: canonicalKey,
-      type: ent.type,
+      canonical_name: metadata.canonicalKey,
+      type: metadata.ent.type,
       decision: confidenceDecision.decision,
-      original_confidence: original,
-      adjusted_confidence: adjusted,
-      reason,
+      original_confidence: metadata.original,
+      adjusted_confidence: metadata.adjusted,
+      reason: metadata.reasons.length > 0 ? metadata.reasons.join(';') : 'ok',
     };
   });
 
+  // Edge validation with endpoint consistency check
   const edgeDecisions: EdgeDecision[] = edges.map((edge) => {
     const sourceCanonical = getCanonical(edge.source_canonical_name);
     const targetCanonical = getCanonical(edge.target_canonical_name);
+    const reasons: string[] = [];
 
     if (sourceCanonical === targetCanonical) {
       return {
@@ -154,16 +283,67 @@ export function validateEntitiesAndEdges(
       };
     }
 
+    // Check endpoint consistency - structural invalidity, so reject
+    const hasUnknownEndpoint = !validEntityKeys.has(sourceCanonical) || !validEntityKeys.has(targetCanonical);
+    if (!validEntityKeys.has(sourceCanonical)) {
+      reasons.push(`unknown_endpoint:source:${sourceCanonical}`);
+    }
+    if (!validEntityKeys.has(targetCanonical)) {
+      reasons.push(`unknown_endpoint:target:${targetCanonical}`);
+    }
+
+    // If unknown endpoint, reject immediately (structurally invalid)
+    if (hasUnknownEndpoint) {
+      return {
+        source_canonical_name: sourceCanonical,
+        target_canonical_name: targetCanonical,
+        relationship_type: edge.relationship_type,
+        decision: 'rejected',
+        confidence: edge.confidence,
+        reason: reasons.join(';'),
+      };
+    }
+
     const confidenceDecision = decideConfidence(edge.confidence);
+    if (confidenceDecision.reason !== 'ok') {
+      reasons.push(confidenceDecision.reason);
+    }
+
     return {
       source_canonical_name: sourceCanonical,
       target_canonical_name: targetCanonical,
       relationship_type: edge.relationship_type,
       decision: confidenceDecision.decision,
       confidence: edge.confidence,
-      reason: confidenceDecision.reason,
+      reason: reasons.length > 0 ? reasons.join(';') : 'ok',
     };
   });
+
+  // Debug logging
+  if (VALIDATION_DEBUG) {
+    const originalConfidences = entityDecisions.map((e) => e.original_confidence);
+    const adjustedConfidences = entityDecisions.map((e) => e.adjusted_confidence);
+    const originalStats = computeStats(originalConfidences);
+    const adjustedStats = computeStats(adjustedConfidences);
+
+    const entityCounts = {
+      approved: entityDecisions.filter((e) => e.decision === 'approved').length,
+      flagged: entityDecisions.filter((e) => e.decision === 'flagged').length,
+      rejected: entityDecisions.filter((e) => e.decision === 'rejected').length,
+    };
+
+    const edgeCounts = {
+      approved: edgeDecisions.filter((e) => e.decision === 'approved').length,
+      flagged: edgeDecisions.filter((e) => e.decision === 'flagged').length,
+      rejected: edgeDecisions.filter((e) => e.decision === 'rejected').length,
+    };
+
+    console.log('[VALIDATION_DEBUG] Entity Confidence Distribution:');
+    console.log(`  Original: min=${originalStats.min.toFixed(3)}, max=${originalStats.max.toFixed(3)}, mean=${originalStats.mean.toFixed(3)}, p50=${originalStats.p50.toFixed(3)}, p90=${originalStats.p90.toFixed(3)}`);
+    console.log(`  Adjusted: min=${adjustedStats.min.toFixed(3)}, max=${adjustedStats.max.toFixed(3)}, mean=${adjustedStats.mean.toFixed(3)}, p50=${adjustedStats.p50.toFixed(3)}, p90=${adjustedStats.p90.toFixed(3)}`);
+    console.log(`[VALIDATION_DEBUG] Entity Decisions: approved=${entityCounts.approved}, flagged=${entityCounts.flagged}, rejected=${entityCounts.rejected}`);
+    console.log(`[VALIDATION_DEBUG] Edge Decisions: approved=${edgeCounts.approved}, flagged=${edgeCounts.flagged}, rejected=${edgeCounts.rejected}`);
+  }
 
   return {
     validated_entities: entityDecisions,

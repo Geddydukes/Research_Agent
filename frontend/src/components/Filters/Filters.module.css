@@ -1,0 +1,238 @@
+.filtersContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    width: 280px;
+    overflow-y: auto;
+}
+
+.filterSection {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.filterHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.filterTitle {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #64748b;
+}
+
+.selectAllBtn {
+    font-size: 11px;
+    color: #6366f1;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.selectAllBtn:hover {
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.filterList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filterItem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filterItem:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.filterItem.active {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.filterCheckbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.filterItem.active .filterCheckbox {
+    background: var(--filter-color, #6366f1);
+    border-color: var(--filter-color, #6366f1);
+}
+
+.filterItem.active .filterCheckbox::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 2px;
+}
+
+.filterColorDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.filterLabel {
+    font-size: 13px;
+    color: #e2e8f0;
+    text-transform: capitalize;
+    flex: 1;
+}
+
+.filterCount {
+    font-size: 11px;
+    color: #64748b;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+/* Cluster Mode */
+.clusterSection {
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.clusterOptions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.clusterOption {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clusterOption:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.clusterOption.active {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+.clusterRadio {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.clusterOption.active .clusterRadio {
+    border-color: #6366f1;
+}
+
+.clusterOption.active .clusterRadio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #6366f1;
+    border-radius: 50%;
+}
+
+.clusterLabel {
+    font-size: 13px;
+    color: #e2e8f0;
+}
+
+.clusterDescription {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+/* Divider */
+.divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 8px 0;
+}
+
+/* Legend */
+.legendSection {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.legendTitle {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.legendItem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.legendIcon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.legendLine {
+    width: 20px;
+    height: 3px;
+    border-radius: 2px;
+}
+
+.legendText {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: capitalize;
+}

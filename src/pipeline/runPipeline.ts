@@ -73,7 +73,8 @@ async function insertEntitiesWithDedup(
   const startTime = Date.now();
   const entityMap = new Map<string, number>();
 
-  const entitiesToProcess = validatedEntities.filter((e) => e.decision !== 'rejected');
+  // Persist ALL entities (including rejected) so they can be reviewed later
+  const entitiesToProcess = validatedEntities;
   
   if (entitiesToProcess.length === 0) {
     logger.info('[Pipeline] No entities to insert');
@@ -81,8 +82,12 @@ async function insertEntitiesWithDedup(
   }
 
   const flaggedEntities = entitiesToProcess.filter((e) => e.decision === 'flagged');
+  const rejectedEntities = entitiesToProcess.filter((e) => e.decision === 'rejected');
   if (flaggedEntities.length > 0) {
     logger.info(`[Pipeline] ${flaggedEntities.length} entities flagged for review`);
+  }
+  if (rejectedEntities.length > 0) {
+    logger.info(`[Pipeline] ${rejectedEntities.length} entities rejected (persisted for review)`);
   }
 
   const lookupPairs = entitiesToProcess.map((entity) => ({
@@ -99,6 +104,8 @@ async function insertEntitiesWithDedup(
     canonical_name: string;
     original_confidence: number;
     adjusted_confidence: number;
+    review_status: 'approved' | 'flagged' | 'rejected';
+    review_reasons: string | undefined;
     metadata: Record<string, unknown>;
     entityIndex: number;
   }> = [];
@@ -117,6 +124,8 @@ async function insertEntitiesWithDedup(
         canonical_name: canonicalKey,
         original_confidence: entity.original_confidence,
         adjusted_confidence: entity.adjusted_confidence,
+        review_status: entity.decision,
+        review_reasons: entity.reason,
         metadata: {
           display_name: entity.canonical_name,
         },
@@ -127,7 +136,10 @@ async function insertEntitiesWithDedup(
 
   if (nodesToInsert.length > 0) {
     const insertStart = Date.now();
-    const nodesForInsert = nodesToInsert.map(({ entityIndex, ...node }) => node);
+    const nodesForInsert = nodesToInsert.map(({ entityIndex, ...node }) => ({
+      ...node,
+      review_reasons: node.review_reasons || undefined,
+    }));
     const insertedNodes = await db.insertNodes(nodesForInsert);
     logger.info(`[Pipeline] Node batch insert: ${Date.now() - insertStart}ms for ${insertedNodes.length} nodes`);
 
@@ -163,11 +175,8 @@ async function insertEdges(
   const edgesToInsert = [];
   const edgeKeys: string[] = [];
 
+  // Persist ALL edges (including rejected) so they can be reviewed later
   for (const validatedEdge of validatedEdges) {
-    if (validatedEdge.decision === 'rejected') {
-      continue;
-    }
-
     const sourceId = entityMap.get(validatedEdge.source_canonical_name);
     const targetId = entityMap.get(validatedEdge.target_canonical_name);
 
@@ -191,17 +200,19 @@ async function insertEdges(
       target_node_id: targetId,
       relationship_type: validatedEdge.relationship_type,
       confidence: validatedEdge.confidence,
-          evidence: evidenceData?.evidence?.slice(0, 300) || undefined,
-          provenance: {
-            section_id: evidenceData?.sectionId,
-            section_type: evidenceData?.sectionType,
-            part_index: evidenceData?.partIndex,
-            meta: {
-              source_paper_id: sourcePaperId,
-              validation_status: validatedEdge.decision,
-              validation_reasons: validatedEdge.reason ? [validatedEdge.reason] : [],
-            },
-          } as Record<string, unknown>,
+      evidence: evidenceData?.evidence?.slice(0, 300) || undefined,
+      review_status: validatedEdge.decision,
+      review_reasons: validatedEdge.reason || undefined,
+      provenance: {
+        section_id: evidenceData?.sectionId,
+        section_type: evidenceData?.sectionType,
+        part_index: evidenceData?.partIndex,
+        meta: {
+          source_paper_id: sourcePaperId,
+          validation_status: validatedEdge.decision,
+          validation_reasons: validatedEdge.reason ? [validatedEdge.reason] : [],
+        },
+      } as Record<string, unknown>,
     });
   }
 
@@ -450,10 +461,10 @@ export async function runPipeline(
     }
 
     logger.info(
-      `[Validation] Approved: ${entityStats.approved}/${validated.validated_entities.length} entities, ${edgeStats.approved}/${validated.validated_edges.length} edges (${edgeStats.flagged} flagged for review)`
+      `[Validation] Approved: ${entityStats.approved}/${validated.validated_entities.length} entities, ${edgeStats.approved}/${validated.validated_edges.length} edges (${edgeStats.flagged} flagged, ${edgeStats.rejected} rejected)`
     );
 
-    // 5. Persist approved entities and edges
+    // 5. Persist all entities and edges (including flagged/rejected for review)
     const entityMap = await insertEntitiesWithDedup(
       dbClient,
       validated.validated_entities,
@@ -500,6 +511,7 @@ export async function runPipeline(
           title: ingested.title,
           year: ingested.year,
         },
+        review_status: 'approved', // Paper nodes are always approved for graph structure
       });
     }
 
@@ -700,6 +712,54 @@ export async function runPipeline(
 
     logger.info(`[Pipeline] Cache: ${cacheReport || 'none'}`);
     logger.info(`[Pipeline] Total time: ${processingTime}ms`);
+
+    // Verification: Check graph consistency
+    // Ensure no approved edge references a non-approved node
+    const approvedNodeCanonicalNames = new Set(
+      validated.validated_entities
+        .filter((e) => e.decision === 'approved')
+        .map((e) => e.canonical_name)
+    );
+
+    const inconsistentEdges: Array<{ edge: string; reason: string }> = [];
+    for (const edge of validated.validated_edges) {
+      if (edge.decision === 'approved') {
+        const sourceApproved = approvedNodeCanonicalNames.has(edge.source_canonical_name);
+        const targetApproved = approvedNodeCanonicalNames.has(edge.target_canonical_name);
+        
+        if (!sourceApproved || !targetApproved) {
+          inconsistentEdges.push({
+            edge: `${edge.source_canonical_name} -> ${edge.target_canonical_name}`,
+            reason: `Approved edge references ${!sourceApproved ? 'non-approved source' : 'non-approved target'}`,
+          });
+        }
+      }
+    }
+
+    if (inconsistentEdges.length > 0) {
+      logger.warn(`[Pipeline] Graph consistency check: ${inconsistentEdges.length} approved edges reference non-approved nodes`, {
+        sample: inconsistentEdges.slice(0, 5),
+      });
+    } else {
+      logger.info('[Pipeline] Graph consistency check: All approved edges reference approved nodes ✓');
+    }
+
+    // Final summary
+    logger.info(`[Pipeline] Persistence summary:`, {
+      entities: {
+        approved: entityStats.approved,
+        flagged: entityStats.flagged,
+        rejected: entityStats.rejected,
+        total: validated.validated_entities.length,
+      },
+      edges: {
+        approved: edgeStats.approved,
+        flagged: edgeStats.flagged,
+        rejected: edgeStats.rejected,
+        total: validated.validated_edges.length,
+      },
+      graphConsistency: inconsistentEdges.length === 0 ? 'valid' : `warning: ${inconsistentEdges.length} issues`,
+    });
 
     return {
       success: true,

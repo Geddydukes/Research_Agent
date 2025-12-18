@@ -7,6 +7,8 @@ export interface Node {
   metadata: Record<string, unknown> | null;
   original_confidence: number | null;
   adjusted_confidence: number | null;
+  review_status: 'approved' | 'flagged' | 'rejected' | null;
+  review_reasons: string | null;
   created_at: string;
 }
 
@@ -18,6 +20,8 @@ export interface Edge {
   confidence: number;
   evidence: string | null;
   provenance: Record<string, unknown> | null;
+  review_status: 'approved' | 'flagged' | 'rejected' | null;
+  review_reasons: string | null;
   created_at: string;
 }
 
@@ -69,6 +73,8 @@ export interface InsertNode {
   metadata?: Record<string, unknown>;
   original_confidence?: number;
   adjusted_confidence?: number;
+  review_status?: 'approved' | 'flagged' | 'rejected';
+  review_reasons?: string;
 }
 
 export interface InsertEdge {
@@ -78,6 +84,8 @@ export interface InsertEdge {
   confidence: number;
   evidence?: string;
   provenance?: Record<string, unknown>;
+  review_status?: 'approved' | 'flagged' | 'rejected';
+  review_reasons?: string;
 }
 
 export interface InsertPaper {
@@ -271,6 +279,39 @@ export class DatabaseClient {
     }
   }
 
+  async updateEdgeProvenance(
+    edgeId: number,
+    provenance: Record<string, unknown>
+  ): Promise<void> {
+    const { error } = await this.client
+      .from('edges')
+      .update({
+        provenance,
+      })
+      .eq('id', edgeId);
+
+    if (error) {
+      throw new Error(`Failed to update edge provenance: ${error.message}`);
+    }
+  }
+
+  async updateEdgesProvenance(
+    updates: Array<{
+      edgeId: number;
+      provenance: Record<string, unknown>;
+    }>
+  ): Promise<void> {
+    if (updates.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      updates.map((update) =>
+        this.updateEdgeProvenance(update.edgeId, update.provenance)
+      )
+    );
+  }
+
   async updateEdgesEvidence(
     updates: Array<{
       edgeId: number;
@@ -394,8 +435,8 @@ export class DatabaseClient {
     return (data || []) as InferredInsight[];
   }
 
-  async getNodesForPaper(paperId: string): Promise<Node[]> {
-    const { data, error } = await this.client
+  async getNodesForPaper(paperId: string, reviewStatus?: 'approved' | 'flagged' | 'rejected'): Promise<Node[]> {
+    let query = this.client
       .from('entity_mentions')
       .select(`
         node_id,
@@ -403,17 +444,26 @@ export class DatabaseClient {
       `)
       .eq('paper_id', paperId);
 
+    const { data, error } = await query;
+
     if (error) {
       throw new Error(`Failed to get nodes for paper: ${error.message}`);
     }
 
     // Extract unique nodes from the join
+    // Exclude Paper nodes - papers are not part of the graph visualization
     const nodeMap = new Map<number, Node>();
     for (const item of data || []) {
       if (item.nodes && !nodeMap.has(item.node_id)) {
         const node = Array.isArray(item.nodes) ? item.nodes[0] : item.nodes;
         if (node) {
-          nodeMap.set(item.node_id, node as Node);
+          const nodeData = node as Node;
+          // Skip Paper nodes
+          if (nodeData.type === 'Paper') continue;
+          // Filter by review_status if specified, otherwise return all
+          if (!reviewStatus || nodeData.review_status === reviewStatus) {
+            nodeMap.set(item.node_id, nodeData);
+          }
         }
       }
     }
@@ -421,7 +471,7 @@ export class DatabaseClient {
     return Array.from(nodeMap.values());
   }
 
-  async getEdgesForPaper(paperId: string): Promise<Edge[]> {
+  async getEdgesForPaper(paperId: string, reviewStatus?: 'approved' | 'flagged' | 'rejected'): Promise<Edge[]> {
     const nodes = await this.getNodesForPaper(paperId);
     const nodeIds = nodes.map(n => n.id);
 
@@ -429,10 +479,17 @@ export class DatabaseClient {
       return [];
     }
 
-    const { data, error } = await this.client
+    let query = this.client
       .from('edges')
       .select('*')
       .or(`source_node_id.in.(${nodeIds.join(',')}),target_node_id.in.(${nodeIds.join(',')})`);
+
+    // Filter by review_status if specified
+    if (reviewStatus) {
+      query = query.eq('review_status', reviewStatus);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(`Failed to get edges for paper: ${error.message}`);
@@ -442,9 +499,11 @@ export class DatabaseClient {
   }
 
   async getGraphData(): Promise<{ nodes: Node[]; edges: Edge[] }> {
+    // Return ONLY approved nodes and edges for main graph endpoint
+    // Exclude Paper nodes - papers are not part of the graph visualization
     const [nodesResult, edgesResult] = await Promise.all([
-      this.client.from('nodes').select('*'),
-      this.client.from('edges').select('*'),
+      this.client.from('nodes').select('*').eq('review_status', 'approved').neq('type', 'Paper'),
+      this.client.from('edges').select('*').eq('review_status', 'approved'),
     ]);
 
     if (nodesResult.error) {
@@ -459,6 +518,130 @@ export class DatabaseClient {
       nodes: (nodesResult.data || []) as Node[],
       edges: (edgesResult.data || []) as Edge[],
     };
+  }
+
+  async getReviewGraphData(): Promise<{ nodes: Node[]; edges: Edge[] }> {
+    // Return nodes and edges that need review (flagged or rejected, excluding null)
+    // Exclude Paper nodes - papers are not part of the graph visualization
+    // Use .in() to explicitly match flagged or rejected status
+    const [nodesResult, edgesResult] = await Promise.all([
+      this.client.from('nodes').select('*').in('review_status', ['flagged', 'rejected']).neq('type', 'Paper'),
+      this.client.from('edges').select('*').in('review_status', ['flagged', 'rejected']),
+    ]);
+
+    if (nodesResult.error) {
+      throw new Error(`Failed to get review nodes: ${nodesResult.error.message}`);
+    }
+
+    if (edgesResult.error) {
+      throw new Error(`Failed to get review edges: ${edgesResult.error.message}`);
+    }
+
+    return {
+      nodes: (nodesResult.data || []) as Node[],
+      edges: (edgesResult.data || []) as Edge[],
+    };
+  }
+
+  async getAllGraphData(): Promise<{ nodes: Node[]; edges: Edge[] }> {
+    // Return ALL nodes and edges regardless of review_status (for rescoring)
+    const [nodesResult, edgesResult] = await Promise.all([
+      this.client.from('nodes').select('*'),
+      this.client.from('edges').select('*'),
+    ]);
+
+    if (nodesResult.error) {
+      throw new Error(`Failed to get all nodes: ${nodesResult.error.message}`);
+    }
+
+    if (edgesResult.error) {
+      throw new Error(`Failed to get all edges: ${edgesResult.error.message}`);
+    }
+
+    return {
+      nodes: (nodesResult.data || []) as Node[],
+      edges: (edgesResult.data || []) as Edge[],
+    };
+  }
+
+  async updateNodeReviewStatus(
+    nodeId: number,
+    reviewStatus: 'approved' | 'flagged' | 'rejected',
+    reviewReasons?: string,
+    adjustedConfidence?: number
+  ): Promise<void> {
+    const updateData: Record<string, unknown> = {
+      review_status: reviewStatus,
+      review_reasons: reviewReasons || null,
+    };
+    
+    if (adjustedConfidence !== undefined) {
+      updateData.adjusted_confidence = adjustedConfidence;
+    }
+
+    const { error } = await this.client
+      .from('nodes')
+      .update(updateData)
+      .eq('id', nodeId);
+
+    if (error) {
+      throw new Error(`Failed to update node review status: ${error.message}`);
+    }
+  }
+
+  async updateNodesReviewStatus(
+    updates: Array<{
+      nodeId: number;
+      reviewStatus: 'approved' | 'flagged' | 'rejected';
+      reviewReasons?: string;
+      adjustedConfidence?: number;
+    }>
+  ): Promise<void> {
+    if (updates.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      updates.map((update) =>
+        this.updateNodeReviewStatus(update.nodeId, update.reviewStatus, update.reviewReasons, update.adjustedConfidence)
+      )
+    );
+  }
+
+  async updateEdgeReviewStatus(
+    edgeId: number,
+    reviewStatus: 'approved' | 'flagged' | 'rejected',
+    reviewReasons?: string
+  ): Promise<void> {
+    const { error } = await this.client
+      .from('edges')
+      .update({
+        review_status: reviewStatus,
+        review_reasons: reviewReasons || null,
+      })
+      .eq('id', edgeId);
+
+    if (error) {
+      throw new Error(`Failed to update edge review status: ${error.message}`);
+    }
+  }
+
+  async updateEdgesReviewStatus(
+    updates: Array<{
+      edgeId: number;
+      reviewStatus: 'approved' | 'flagged' | 'rejected';
+      reviewReasons?: string;
+    }>
+  ): Promise<void> {
+    if (updates.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      updates.map((update) =>
+        this.updateEdgeReviewStatus(update.edgeId, update.reviewStatus, update.reviewReasons)
+      )
+    );
   }
 
   async findNodeByCanonicalName(
@@ -546,12 +729,22 @@ export class DatabaseClient {
   /**
    * Get node by ID - for API use
    */
-  async getNodeById(nodeId: number): Promise<Node | null> {
-    const { data, error } = await this.client
+  async getNodeById(nodeId: number, reviewStatus?: 'approved' | 'flagged' | 'rejected'): Promise<Node | null> {
+    let query = this.client
       .from('nodes')
       .select('*')
       .eq('id', nodeId)
-      .maybeSingle();
+      .neq('type', 'Paper'); // Exclude Paper nodes from graph queries
+
+    // Filter by review_status if specified (default to approved for main graph)
+    if (reviewStatus) {
+      query = query.eq('review_status', reviewStatus);
+    } else {
+      // Default to approved for main graph queries
+      query = query.eq('review_status', 'approved');
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null;
@@ -564,17 +757,107 @@ export class DatabaseClient {
   /**
    * Get edges for a node - for API use
    */
-  async getEdgesForNode(nodeId: number): Promise<Edge[]> {
-    const { data, error } = await this.client
+  async getEdgesForNode(nodeId: number, reviewStatus?: 'approved' | 'flagged' | 'rejected'): Promise<Edge[]> {
+    let query = this.client
       .from('edges')
       .select('*')
       .or(`source_node_id.eq.${nodeId},target_node_id.eq.${nodeId}`);
+
+    // Filter by review_status if specified (default to approved for main graph)
+    if (reviewStatus) {
+      query = query.eq('review_status', reviewStatus);
+    } else {
+      // Default to approved for main graph queries
+      query = query.eq('review_status', 'approved');
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(`Failed to get edges: ${error.message}`);
     }
 
     return (data || []) as Edge[];
+  }
+
+  /**
+   * Get all papers that mention a node (via entity_mentions)
+   * Includes URL construction from externalIds and adds name field (title)
+   */
+  async getPapersForNode(nodeId: number): Promise<Array<Paper & { name: string }>> {
+    const { data, error } = await this.client
+      .from('entity_mentions')
+      .select(`
+        paper_id,
+        papers (*)
+      `)
+      .eq('node_id', nodeId);
+
+    if (error) {
+      throw new Error(`Failed to get papers for node: ${error.message}`);
+    }
+
+    // Extract unique papers and construct URLs
+    const paperMap = new Map<string, Paper & { name: string }>();
+    for (const item of data || []) {
+      if (item.papers) {
+        const paper = (Array.isArray(item.papers) ? item.papers[0] : item.papers) as Paper;
+        if (paper && !paperMap.has(paper.paper_id)) {
+          // Construct URL from externalIds if available
+          const url = this.constructPaperUrl(paper);
+          // Use title as name, fallback to paper_id if title is missing
+          const name = paper.title || paper.paper_id;
+          paperMap.set(paper.paper_id, {
+            ...paper,
+            name,
+            metadata: {
+              ...paper.metadata,
+              url, // Add constructed URL to metadata
+            },
+          });
+        }
+      }
+    }
+
+    return Array.from(paperMap.values());
+  }
+
+  /**
+   * Construct paper URL from externalIds in metadata
+   */
+  private constructPaperUrl(paper: Paper): string | null {
+    const metadata = paper.metadata as Record<string, unknown> | null;
+    if (!metadata) return null;
+
+    const externalIds = metadata.externalIds as Record<string, string> | undefined;
+    if (!externalIds) return null;
+
+    // Try ArXiv first
+    const arxivId = externalIds.ArXiv || externalIds.arXiv || externalIds.arxiv;
+    if (arxivId) {
+      // Normalize ArXiv ID (remove version if present for abs URL)
+      const normalized = arxivId.replace(/v\d+$/, '');
+      return `https://arxiv.org/abs/${normalized}`;
+    }
+
+    // Try DOI
+    const doi = externalIds.DOI || externalIds.doi;
+    if (doi) {
+      return `https://doi.org/${doi}`;
+    }
+
+    // Try Semantic Scholar CorpusId
+    const corpusId = externalIds.CorpusId;
+    if (corpusId) {
+      return `https://www.semanticscholar.org/paper/${corpusId}`;
+    }
+
+    // Try Semantic Scholar paperId (if paper_id looks like SS ID)
+    if (paper.paper_id && paper.paper_id.length > 20 && !paper.paper_id.includes('.')) {
+      return `https://www.semanticscholar.org/paper/${paper.paper_id}`;
+    }
+
+    return null;
   }
 
   /**

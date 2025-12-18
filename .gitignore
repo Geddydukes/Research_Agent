@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+ingest_log*.txt
 .DS_Store
 *.swp
 *.swo
@@ -11,12 +12,20 @@ downloads/
 
 .cache/
 
-# TypeScript build artifacts
-*.js.map
-*.d.ts
-*.d.ts.map
-tests/*.js
-tests/*.js.map
+# TypeScript build artifacts (backend only)
+/src/**/*.js.map
+/src/**/*.d.ts
+/src/**/*.d.ts.map
+/tests/*.js
+/tests/*.js.map
 
-api/
-api/services/
+# Backend API (exclude from git)
+
+# Documentation files
+TAKE_HOME_SUBMISSION_REPORT.txt
+DIAGRAM_SPECIFICATION_REPORT.txt
+
+# Database exports and merge maps
+*_database_export_*.json
+*_dedupe_export_*.json
+dedupe_merge_map.json

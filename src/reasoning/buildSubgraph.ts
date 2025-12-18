@@ -78,9 +78,10 @@ export async function buildSubgraph(
 
   const fetchStart = Date.now();
   const paperFetches = affectedPaperIds.map(async (paperId) => {
+    // For reasoning, we want only approved nodes/edges to maintain quality
     const [paperNodes, edges] = await Promise.all([
-      db.getNodesForPaper(paperId),
-      db.getEdgesForPaper(paperId),
+      db.getNodesForPaper(paperId, 'approved'),
+      db.getEdgesForPaper(paperId, 'approved'),
     ]);
     return { paperId, nodes: paperNodes, edges };
   });

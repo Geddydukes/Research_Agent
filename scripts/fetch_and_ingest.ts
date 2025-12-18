@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import path from 'path';
-import { selectCorpus } from '../src/ingest/semanticScholar/selection';
-import { selectCorpusArxiv } from '../src/ingest/arxiv/selection';
-import { extractArxivId, searchArxivByTitle } from '../src/ingest/arxiv/util';
+import { selectCorpusUnified } from '../src/ingest/unified/selection';
 import { downloadPdfsForSelected } from '../src/ingest/semanticScholar/downloader';
 import { parsePaperFile } from '../src/utils/paperParser';
 import { runPipeline } from '../src/pipeline/runPipeline';
@@ -37,70 +35,42 @@ async function main() {
     throw new Error('Missing Supabase env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
   }
 
-  const useArxivOnly = process.env.USE_ARXIV === '1';
   const forceReingest = process.env.FORCE_REINGEST === '1';
   const mode = process.env.MODE || 'incremental';
+  
+  // Configuration for unified selection
+  const semanticThreshold = Number(process.env.SEMANTIC_THRESHOLD || '0.7');
+  const maxCandidatesToEmbed = Number(process.env.MAX_CANDIDATES_TO_EMBED || '500');
+  const maxSelectedPapers = Number(process.env.MAX_SELECTED_PAPERS || '100');
 
   const db = createDatabaseClient();
 
-  let selection:
-    | {
-        seed: { paperId: string; title: string; year?: number; externalIds?: Record<string, string>; arxivId?: string | null };
-        selected: Array<{ paperId: string; title: string; abstract?: string; year?: number; externalIds?: Record<string, string>; arxivId?: string | null }>;
-        debug: Record<string, unknown>;
-      }
-    | null = null;
+  // Unified selection: retrieval + semantic gating
+  // Semantic gating happens BEFORE any PDF download
+  console.log('[Select] Starting unified selection (retrieval + semantic gating)...');
+  const selection = await selectCorpusUnified({
+    seedTitle,
+    ssApiKey,
+    googleApiKey,
+    config: {
+      embeddingsModel,
+      semanticThreshold,
+      maxCandidatesToEmbed,
+      maxSelectedPapers,
+    },
+    logger: defaultLogger,
+  });
 
-  if (!useArxivOnly) {
-    try {
-      console.log('[Select] Starting selection from Semantic Scholar...');
-      console.log('[Select] Calling selectCorpus with seedTitle:', seedTitle);
-      const selectPromise = selectCorpus({
-        seedTitle,
-        ssApiKey,
-        googleApiKey,
-        config: { embeddingsModel },
-      });
-      console.log('[Select] selectCorpus promise created, awaiting...');
-      selection = await selectPromise;
-      console.log('[Select] Semantic Scholar selection completed:', selection ? `${selection.selected.length} papers selected` : 'null');
-    } catch (err) {
-      console.error('[Select] Semantic Scholar failed, falling back to arXiv-only selection', err);
-      console.error('[Select] Error details:', err instanceof Error ? err.message : String(err));
-      console.error('[Select] Error stack:', err instanceof Error ? err.stack : 'No stack trace');
-    }
-  }
+  console.log('[Select] Unified selection complete', {
+    seed: selection.seed.title,
+    selectedCount: selection.selected.length,
+    retrievalStats: selection.debug.retrievalStats,
+    gatingStats: selection.debug.gatingStats,
+  });
 
-  if (!selection) {
-    console.log('[Select] Using arXiv-only selection...');
-    selection = await selectCorpusArxiv({
-      seedQuery: seedTitle,
-      googleApiKey,
-      config: {
-        embeddingsModel,
-      },
-    });
-  }
-
-  // Resolve arXiv IDs aggressively (normalize + title search), and allow metadata-only fallback
-  // Process ALL selected papers (no limit on filtering)
-  const resolved: typeof selection.selected = [];
-  for (const p of selection.selected) {
-    const direct = p.arxivId || extractArxivId(p);
-    if (direct) {
-      resolved.push({ ...p, arxivId: direct });
-      continue;
-    }
-    const fromTitle = p.title ? await searchArxivByTitle(p.title) : null;
-    if (fromTitle) {
-      resolved.push({ ...p, arxivId: fromTitle });
-      continue;
-    }
-    // metadata-only fallback
-    resolved.push({ ...p, arxivId: null });
-  }
-
-  const downloadable = resolved.filter((p) => p.arxivId);
+  // All selected papers have already passed semantic gating
+  // arXiv IDs are already resolved in unified selection
+  const downloadable = selection.selected.filter((p) => p.arxivId);
 
   let toDownload = downloadable;
   if (mode === 'incremental' && !forceReingest) {
@@ -116,9 +86,11 @@ async function main() {
   }
 
   console.log(
-    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected: ${resolved.length} | With arxiv: ${downloadable.length} | To download: ${toDownload.length}`
+    `[Select] Seed: ${selection.seed.title} (${selection.seed.year}) | Selected: ${selection.selected.length} | With arxiv: ${downloadable.length} | To download: ${toDownload.length}`
   );
 
+  // Download PDFs for semantically-gated papers
+  // Note: All papers here have already passed semantic similarity threshold
   const downloads =
     toDownload.length > 0
       ? await downloadPdfsForSelected(toDownload as any, downloadDir, toDownload.length)
@@ -137,8 +109,8 @@ async function main() {
   }
 
   // Prepare ingestion tasks: downloaded PDFs first, then metadata-only if no PDF
-  // Process ALL resolved papers (no limit)
-  const ingestTasks = resolved.map(async (p) => {
+  // Process ALL selected papers (already semantically gated)
+  const ingestTasks = selection.selected.map(async (p) => {
     const downloaded = succeeded.find((d) => d.paperId === p.paperId || d.paperId === p.arxivId);
     if (!downloaded) {
       console.warn(`[Ingest] No PDF for ${p.paperId}; skipping PDF parse and storing metadata only.`);
@@ -173,7 +145,7 @@ async function main() {
 
   const ingestResults = await Promise.allSettled(ingestTasks);
   const okResults = ingestResults
-    .map((r, idx) => ({ result: r, paper: resolved[idx] }))
+    .map((r, idx) => ({ result: r, paper: selection.selected[idx] }))
     .filter((r) => r.result.status === 'fulfilled' && r.result.value === true);
   const okCount = okResults.length;
   const affectedPaperIds = okResults
