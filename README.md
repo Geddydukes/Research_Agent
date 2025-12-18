@@ -57,6 +57,27 @@ At a high level, the system operates as a bounded pipeline:
 
 ---
 
+## Corpus Selection
+
+Papers are selected using a two-phase strategy:
+1. **Multi-source retrieval:** Gather ~500-1000 candidates from Semantic Scholar (citations, references, keywords) and arXiv (title, author, category searches)
+2. **Semantic gating:** Embed all candidates, compute cosine similarity to the seed paper, filter to similarity ≥ 0.7, select top 100
+
+This ensures only semantically relevant papers consume expensive LLM extraction resources, reducing costs by ~80% compared to processing all citations.
+
+**Seed paper:** "3D Gaussian Splatting for Real-Time Radiance Field Rendering" (Kerbl et al., 2023)
+
+## Results
+
+Processed 46 papers from the Gaussian Splatting domain, extracting:
+- **228 entities** (102 Methods, 38 Concepts, 28 Datasets, 21 Metrics)
+- **267 relationships** (improves_on, uses, evaluates, introduces, extends, compares_to)
+- **60 inferred insights** via multi-hop reasoning
+
+Validation: 98% entity approval rate, 76% edge approval rate (low-confidence edges rejected by design).
+
+---
+
 ## Documentation Guide
 
 This README provides a high-level orientation. Detailed architecture, validation logic, trade-offs, and diagrams are documented separately to keep this overview clean:
@@ -80,6 +101,45 @@ The submission includes a set of **runnable Postgres queries** demonstrating com
 > *Which papers improve on the original 3D Gaussian Splatting method?*
 
 See: **[`sql/queries.sql`](sql/queries.sql)** for complete, executable examples grounded in the implemented schema.
+
+-- ============================================================================
+-- QUERY 1: Papers that improve on 3D Gaussian Splatting
+-- ============================================================================
+-- Purpose: Find all papers that claim to improve on the 3D Gaussian Splatting
+-- method, ordered by confidence and year.
+-- 
+-- Note: This query finds relationships where '3d_gaussian_splatting' is the TARGET
+-- (i.e., other methods/papers improve on it). Uses edge provenance to link to
+-- source papers deterministically, avoiding entity_mentions join ambiguity.
+-- 
+-- Expected columns: paper_id, title, year, confidence, evidence, source_entity, source_type
+
+SELECT DISTINCT 
+  p.paper_id,
+  p.title,
+  p.year,
+  e.confidence, 
+  e.evidence,
+  source_node.canonical_name AS source_entity,
+  source_node.type AS source_type
+FROM edges e
+JOIN nodes target_node ON e.target_node_id = target_node.id
+JOIN nodes source_node ON e.source_node_id = source_node.id
+LEFT JOIN papers p ON p.paper_id = e.provenance->'meta'->>'source_paper_id'
+WHERE e.relationship_type = 'improves_on'
+  AND target_node.canonical_name = '3d_gaussian_splatting'
+  AND target_node.type = 'Method'
+  AND e.confidence >= 0.6
+  AND e.provenance->'meta'->>'source_paper_id' IS NOT NULL
+ORDER BY e.confidence DESC, p.year DESC
+LIMIT 10;
+
+-- ACTUAL OUTPUT (executed on database):
+-- paper_id                                    | title                                                      | year | confidence | evidence                                                                 | source_entity   | source_type
+-- --------------------------------------------|-----------------------------------------------------------|------|------------|--------------------------------------------------------------------------|-----------------|------------
+-- 2312_02155v3                                | GPS-Gaussian: Generalizable Pixel-wise 3D Gaussian...    | null | 0.9        | Quantitative comparisons against state-of-the-art generalizable methods... | gps_gaussian    | Method
+-- fc54a8f8272688851fdd5dfbf9f1deacbe39eb30   | 4D-Rotor Gaussian Splatting: Towards Efficient Novel... | 2024 | 0.9        | null                                                                      | 4drotorgs       | Method
+-- 2501_11102v1                                | RDG-GS: Relative Depth Guidance with Gaussian Splatting  | 2025 | 0.85       | RDG-GS achieves state-of-the-art performance on Mip-NeRF360...            | rdg_gs          | Method
 
 ---
 
