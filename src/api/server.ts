@@ -64,7 +64,8 @@ async function buildServer() {
 async function start() {
   try {
     const server = await buildServer();
-    const port = parseInt(process.env.API_PORT || '3000', 10);
+    // Use PORT (set by hosting platforms like Railway) or fall back to API_PORT or 3000
+    const port = parseInt(process.env.PORT || process.env.API_PORT || '3000', 10);
     const host = process.env.API_HOST || '0.0.0.0';
 
     await server.listen({ port, host });
