@@ -7,12 +7,13 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (including dev dependencies for build)
-RUN npm ci
+# Ignore scripts during install to prevent postinstall from running without source files
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
 
-# Build TypeScript
+# Build TypeScript (now that source files are available)
 RUN npm run build
 
 # Production stage
