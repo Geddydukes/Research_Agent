@@ -1,7 +1,5 @@
 # AI Research Discovery Agent
 
-This repository contains my submission for the **AI Engineer take-home assignment**, focused on building an agentic system for research discovery.
-
 This project addresses a core problem in modern research workflows: academic papers encode rich semantic claims, but those claims are not structured in a way that supports reliable discovery, comparison, or reasoning.
 
 In fast-moving domains such as computer vision, researchers face three fundamental challenges:
