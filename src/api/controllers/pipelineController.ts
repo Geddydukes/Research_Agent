@@ -39,6 +39,11 @@ export class PipelineController {
       throw createError('paper_id and raw_text are required', 400);
     }
 
+    const tenantId = (request as any).tenantId;
+    if (!tenantId) {
+      throw createError('Tenant ID is required', 400, 'TENANT_REQUIRED');
+    }
+
     const jobId = uuidv4();
     const job: PipelineJob = {
       jobId,
@@ -49,7 +54,7 @@ export class PipelineController {
     jobs.set(jobId, job);
 
     // Process asynchronously
-    this.processJob(jobId, { paper_id, title, raw_text, metadata }).catch(
+    this.processJob(jobId, { paper_id, title, raw_text, metadata }, tenantId).catch(
       (error) => {
         const job = jobs.get(jobId);
         if (job) {
@@ -82,15 +87,15 @@ export class PipelineController {
     reply.send({ data: job });
   }
 
-  private async processJob(jobId: string, input: PaperInput) {
+  private async processJob(jobId: string, input: PaperInput, tenantId: string) {
     const job = jobs.get(jobId);
     if (!job) return;
 
     job.status = 'processing';
 
     try {
-      const db = createDatabaseClient();
-      const result = await runPipeline(input, db);
+      const db = createDatabaseClient(tenantId);
+      const result = await runPipeline(input, tenantId, db);
 
       job.status = result.success ? 'completed' : 'failed';
       job.result = result;

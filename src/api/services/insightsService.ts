@@ -5,12 +5,17 @@ export class InsightsService {
   constructor(private db: DatabaseClient) {}
 
   async getAllInsights(
-    params: PaginationParams = {}
+    params: PaginationParams & { q?: string; type?: string } = {}
   ): Promise<PaginatedResponse<InferredInsight>> {
     const page = params.page || 1;
     const limit = params.limit || 50;
 
-    const { data, count } = await this.db.getAllInsights({ page, limit });
+    const { data, count } = await this.db.getAllInsights({
+      page,
+      limit,
+      query: params.q,
+      insightType: params.type,
+    });
 
     const total = count;
     const totalPages = Math.ceil(total / limit);

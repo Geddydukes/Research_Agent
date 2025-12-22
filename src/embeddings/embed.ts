@@ -18,7 +18,7 @@ export class EmbeddingsClient {
     this.ai = new GoogleGenerativeAI(apiKey);
   }
 
-  async embedTexts(texts: string[], model = 'gemini-embedding-001'): Promise<EmbeddingVector[]> {
+  async embedTexts(texts: string[], tenantId: string, model = 'gemini-embedding-001'): Promise<EmbeddingVector[]> {
     if (texts.length === 0) return [];
 
     const results: (EmbeddingVector | null)[] = new Array(texts.length).fill(null);
@@ -49,7 +49,7 @@ export class EmbeddingsClient {
 
     const uniqueTexts = Array.from(textToIndex.keys());
     const cacheResults = await Promise.all(
-      uniqueTexts.map((text) => readCache<EmbeddingVector>(textToCacheKey.get(text)!))
+      uniqueTexts.map((text) => readCache<EmbeddingVector>(textToCacheKey.get(text)!, tenantId))
     );
 
     for (let i = 0; i < uniqueTexts.length; i++) {
@@ -109,7 +109,7 @@ export class EmbeddingsClient {
           },
           vals
         );
-        await writeCache(key, entry);
+        await writeCache(key, entry, tenantId);
         return { vals, batchIdx };
       });
 

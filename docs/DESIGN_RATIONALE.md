@@ -100,7 +100,7 @@ Allowing agents to dynamically invent node or edge types leads to schema drift a
 
 **Rationale:** Schema rigidity enables deterministic validation, efficient SQL querying, and stable reasoning rules. While the ontology is fixed in this implementation, it is designed to be extended deliberately rather than emergently, preserving graph integrity as new domains are added.
 
-**Outcome:** Canonicalization ensures that identical concepts map to a single node, preventing combinatorial graph growth and fragmentation.
+**Outcome:** Canonicalization ensures that identical concepts map to a single node, preventing combinatorial graph growth and fragmentation. The system now extends this with semantic entity resolution (two-tier: exact match + embedding similarity) to link semantically identical entities while preserving reversibility through link-based canonicalization.
 
 ## 6. Scalability and Incremental Growth
 
@@ -115,9 +115,30 @@ Full-graph processing does not scale as the corpus grows from 100 to 10,000 pape
 - Lane-based concurrency: Distinct rate limits for Embeddings (4 concurrent) vs. LLMs (2 concurrent) to prevent API saturation.
 - Multi-level caching: Caching of agent outputs, derived artifacts, and embeddings.
 - Incremental reasoning: Reasoning runs only over induced subgraphs (depth=2) of newly ingested papers.
+- **Persistent embeddings**: Paper and entity embeddings stored in PostgreSQL using pgvector, enabling fast similarity search without redundant API calls.
 
-**Rationale:** This prevents retry storms, reduces tail latency, and ensures that computation scales with the rate of change, not total corpus size.
+**Rationale:** This prevents retry storms, reduces tail latency, and ensures that computation scales with the rate of change, not total corpus size. Storing embeddings in the database (rather than recomputing) dramatically reduces semantic gating latency for papers already processed.
 
 **Outcome:** The system can grow incrementally without sacrificing responsiveness or correctness.
+
+## 7. Semantic Entity Resolution
+
+### Challenge
+
+Exact string matching fails to link semantically identical entities (e.g., "3D Gaussian Splatting" vs "3DGS" vs "3d_gaussian_splatting").
+
+### Design Decision: Two-Tier Resolution with Link-Based Canonicalization
+
+**Implementation:**
+
+- **Tier A (Deterministic)**: Exact canonical name matching
+- **Tier B (Semantic)**: Embedding-based similarity search with strict auto-approval rules
+- **Link-based approach**: Entities are linked (not merged) via `entity_links` table with `alias_of` relationships
+- **Query-time resolution**: `nodes_resolved` and `edges_resolved` views preserve original node IDs while providing canonical resolution
+- **Dual embeddings**: Entities store both 3072-dim raw embeddings (precision) and 768-dim indexed embeddings (fast HNSW search)
+
+**Rationale:** False merges are irreversible and destroy information. The link-based approach allows all canonicalization decisions to be audited and reversed. Strict auto-approval thresholds (similarity ≥ 0.95, shared alias/phrase, no short acronyms) prevent false positives while still enabling high-confidence automatic linking.
+
+**Outcome:** The graph maintains precision while reducing fragmentation through semantic resolution, with all decisions being reversible and auditable.
 
 Together, these decisions prioritize semantic precision, operational reliability, and explainability, forming a foundation suitable for both exploratory research and production-scale discovery.

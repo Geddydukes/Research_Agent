@@ -104,36 +104,85 @@ export function KnowledgeGraph() {
         fg.d3ReheatSimulation();
     }, [dimensions, graphData]);
 
-    // Cluster force based on entity type
+    // Cluster force based on cluster mode
     useEffect(() => {
-        if (!graphRef.current || !graphData || clusterMode !== 'type') return;
+        if (!graphRef.current || !graphData) return;
 
         const fg = graphRef.current;
 
-        // Get unique types and assign cluster positions - larger radius for paper cards
-        const types = [...new Set(graphData.nodes.map(n => n.entity.type.toLowerCase()))];
-        const angleStep = (2 * Math.PI) / types.length;
-        const clusterRadius = Math.min(dimensions.width, dimensions.height) * 0.35;
+        // First, remove any existing cluster force
+        fg.d3Force('cluster', null);
 
-        const typePositions = new Map<string, { x: number; y: number }>();
-        types.forEach((type, i) => {
-            typePositions.set(type, {
-                x: Math.cos(i * angleStep) * clusterRadius,
-                y: Math.sin(i * angleStep) * clusterRadius,
-            });
+        // Always unfix all node positions when cluster mode changes
+        // This allows nodes to reposition according to the new clustering
+        graphData.nodes.forEach((node) => {
+            node.fx = undefined;
+            node.fy = undefined;
         });
 
-        // Apply cluster force
-        fg.d3Force('cluster', (alpha: number) => {
-            graphData.nodes.forEach((node) => {
-                const target = typePositions.get(node.entity.type.toLowerCase());
-                if (target && node.x !== undefined && node.y !== undefined) {
-                    const k = alpha * 0.2;
-                    node.x += (target.x - node.x) * k;
-                    node.y += (target.y - node.y) * k;
-                }
+        if (clusterMode === 'none') {
+            // No clustering - just reheat to let nodes settle naturally
+            fg.d3ReheatSimulation();
+            return;
+        }
+
+        if (clusterMode === 'type') {
+            // Cluster by entity type - arrange in a circle by type
+            const types = [...new Set(graphData.nodes.map(n => n.entity.type.toLowerCase()))];
+            const angleStep = (2 * Math.PI) / types.length;
+            const clusterRadius = Math.min(dimensions.width, dimensions.height) * 0.35;
+
+            const typePositions = new Map<string, { x: number; y: number }>();
+            types.forEach((type, i) => {
+                typePositions.set(type, {
+                    x: Math.cos(i * angleStep) * clusterRadius,
+                    y: Math.sin(i * angleStep) * clusterRadius,
+                });
             });
-        });
+
+            // Apply cluster force
+            fg.d3Force('cluster', (alpha: number) => {
+                graphData.nodes.forEach((node) => {
+                    const target = typePositions.get(node.entity.type.toLowerCase());
+                    if (target && node.x !== undefined && node.y !== undefined) {
+                        const k = alpha * 0.3;  // Increased strength
+                        node.vx = (node.vx || 0) + (target.x - node.x) * k;
+                        node.vy = (node.vy || 0) + (target.y - node.y) * k;
+                    }
+                });
+            });
+        }
+
+        if (clusterMode === 'relationship') {
+            // Cluster by connections - nodes with more connections cluster together
+            // Calculate degree for each node from edges
+            const degreeMap = new Map<string, number>();
+            graphData.nodes.forEach(n => degreeMap.set(n.id, 0));
+
+            // Count degrees from links in graphData
+            graphData.links.forEach(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : String(link.source);
+                const targetId = typeof link.target === 'object' ? link.target.id : String(link.target);
+                degreeMap.set(sourceId, (degreeMap.get(sourceId) || 0) + 1);
+                degreeMap.set(targetId, (degreeMap.get(targetId) || 0) + 1);
+            });
+
+            const maxDegree = Math.max(...Array.from(degreeMap.values()), 1);
+
+            // High-degree nodes cluster in center, low-degree on periphery
+            fg.d3Force('cluster', (alpha: number) => {
+                graphData.nodes.forEach((node) => {
+                    if (node.x !== undefined && node.y !== undefined) {
+                        const degree = degreeMap.get(node.id) || 0;
+
+                        // Pull high-degree nodes toward center
+                        const pullStrength = (degree / maxDegree) * alpha * 0.15;
+                        node.vx = (node.vx || 0) + (0 - node.x) * pullStrength;
+                        node.vy = (node.vy || 0) + (0 - node.y) * pullStrength;
+                    }
+                });
+            });
+        }
 
         fg.d3ReheatSimulation();
     }, [graphData, clusterMode, dimensions]);
@@ -493,6 +542,7 @@ export function KnowledgeGraph() {
                     }
                 }}
                 cooldownTicks={100}
+                warmupTicks={graphData.nodes.length > 200 ? 50 : 0}
                 d3AlphaDecay={0.02}
                 d3VelocityDecay={0.3}
                 enableNodeDrag={true}

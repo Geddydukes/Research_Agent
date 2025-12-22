@@ -326,3 +326,235 @@
         transform: rotate(360deg);
     }
 }
+
+/* Insights Panel */
+.insightsPanelContainer {
+    position: fixed;
+    top: 0;
+    left: 280px;
+    width: 420px;
+    height: 100vh;
+    background: rgba(15, 15, 22, 0.98);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 90;
+    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.5);
+    animation: slideInLeft 0.3s ease;
+}
+
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.insightsPanelHeader {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.insightsFilters {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.insightsSearch {
+    width: 100%;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #f8fafc;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.insightsSearch:focus {
+    border-color: #6366f1;
+}
+
+.insightsSearch::placeholder {
+    color: #64748b;
+}
+
+.insightsTypeFilters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.insightsTypeBtn {
+    padding: 5px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.insightsTypeBtn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+}
+
+.insightsTypeBtn.active {
+    background: var(--insight-color, #6366f1);
+    border-color: var(--insight-color, #6366f1);
+    color: white;
+}
+
+.insightsList {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.insightCard {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.insightCardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.insightType {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: white;
+}
+
+.insightConfidence {
+    font-size: 12px;
+    font-weight: 600;
+    color: #10b981;
+}
+
+.insightSubjects {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.insightNodeBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    color: #a5b4fc;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.insightNodeBtn:hover {
+    background: rgba(99, 102, 241, 0.2);
+    color: #f8fafc;
+}
+
+.insightNodeSeparator {
+    color: #64748b;
+    margin-left: 4px;
+}
+
+.insightExpandBtn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 6px 0;
+    transition: color 0.15s ease;
+}
+
+.insightExpandBtn:hover {
+    color: #94a3b8;
+}
+
+.insightExpandBtn svg {
+    transition: transform 0.2s ease;
+}
+
+.insightReasoning {
+    margin-top: 10px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.insightStep {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.insightStepNum {
+    width: 20px;
+    height: 20px;
+    background: rgba(99, 102, 241, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: #818cf8;
+    flex-shrink: 0;
+}
+
+.insightStepText {
+    font-size: 12px;
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+.insightsPanelFooter {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    color: #64748b;
+    text-align: center;
+}

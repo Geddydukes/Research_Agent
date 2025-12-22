@@ -14,7 +14,8 @@ export async function createTestData(): Promise<{
   insights: InferredInsight[];
   cleanup: () => Promise<void>;
 }> {
-  const db = createDatabaseClient();
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+  const db = createDatabaseClient(DEFAULT_TENANT_ID);
   const testPrefix = `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
   // Create test papers
@@ -174,7 +175,8 @@ export async function createTestServerWithRealDb(): Promise<{
   testData: Awaited<ReturnType<typeof createTestData>>;
   cleanup: () => Promise<void>;
 }> {
-  const db = createDatabaseClient();
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+  const db = createDatabaseClient(DEFAULT_TENANT_ID);
   const testData = await createTestData();
 
   const cors = require('@fastify/cors');

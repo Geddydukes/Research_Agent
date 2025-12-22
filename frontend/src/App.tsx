@@ -4,6 +4,7 @@ import { AppLayout } from './components/Layout/AppLayout';
 import { KnowledgeGraph } from './components/Graph/KnowledgeGraph';
 import { FilterPanel } from './components/Filters/FilterPanel';
 import { EntityDetailPanel } from './components/Panels/EntityDetailPanel';
+import { InsightsPanel } from './components/Panels/InsightsPanel';
 import { EdgeModal } from './components/Modal/EdgeModal';
 import { SearchModal } from './components/Modal/SearchModal';
 import { useGraphData } from './hooks/useGraphData';
@@ -24,6 +25,7 @@ function AppContent() {
   useGraphData();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
 
   const {
     graphData,
@@ -49,9 +51,15 @@ function AppContent() {
       <AppLayout
         sidebar={<FilterPanel />}
         onSearchClick={() => setIsSearchOpen(true)}
+        onInsightsClick={() => setIsInsightsOpen(!isInsightsOpen)}
       >
         <KnowledgeGraph />
       </AppLayout>
+
+      {/* Insights Panel */}
+      {isInsightsOpen && (
+        <InsightsPanel onClose={() => setIsInsightsOpen(false)} />
+      )}
 
       {/* Detail Panel - completely separate from layout */}
       {selectedEntity && (

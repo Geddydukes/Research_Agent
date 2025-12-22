@@ -143,6 +143,39 @@ class ApiClient {
         return { nodes: response.data.nodes || [], papers: response.data.papers || [] };
     }
 
+    // Semantic search for similar papers using embeddings
+    async semanticSearch(query: string, limit = 20, threshold = 0.0): Promise<{
+        papers: Array<{ paper: Paper; similarity: number }>;
+        query: string;
+        count: number;
+    }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Mock semantic search - just return some papers with fake similarity
+            const papers = mockPapers.slice(0, limit).map(p => ({
+                paper: p,
+                similarity: Math.random() * 0.5 + 0.5 // Random 0.5-1.0
+            }));
+            return { papers, query, count: papers.length };
+        }
+
+        const params = new URLSearchParams({
+            q: query,
+            limit: limit.toString(),
+            threshold: threshold.toString(),
+        });
+
+        const response = await this.fetch<{
+            data: {
+                papers: Array<{ paper: Paper; similarity: number }>;
+                query: string;
+                count: number;
+            };
+        }>(`/api/search/semantic?${params}`);
+
+        return response.data;
+    }
+
     // Toggle mock mode
     setUseMock(useMock: boolean) {
         this.useMock = useMock;

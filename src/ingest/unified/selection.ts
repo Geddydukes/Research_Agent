@@ -17,6 +17,7 @@ import { EmbeddingsClient } from '../../embeddings/embed';
 import { cosineSimilarity, normalizeTextForEmbedding } from '../../embeddings/similarity';
 import { withRetry } from '../../utils/retry';
 import { extractArxivId, searchArxivByTitle } from '../arxiv/util';
+import type { DatabaseClient } from '../../db/client';
 
 export type SelectionReason = 'seed' | 'semantic';
 
@@ -303,7 +304,9 @@ async function applySemanticGating(params: {
   seed: UnifiedPaper;
   candidates: UnifiedPaper[];
   googleApiKey: string;
+  tenantId: string;
   config: SelectionConfig;
+  db?: DatabaseClient;
   logger?: { info: (msg: string, ctx?: Record<string, unknown>) => void };
 }): Promise<{
   selected: SelectedPaper[];
@@ -316,33 +319,109 @@ async function applySemanticGating(params: {
     selectedCount: number;
   };
 }> {
-  const { seed, candidates, googleApiKey, config, logger } = params;
+  const { seed, candidates, googleApiKey, config, db, logger } = params;
   const log = logger || { info: console.log };
-
-  // Cap candidates to embed (bounded execution)
-  const candidatesToEmbed = candidates.slice(0, config.maxCandidatesToEmbed);
-  log.info('[SemanticGating] Computing embeddings', {
-    totalCandidates: candidates.length,
-    candidatesToEmbed: candidatesToEmbed.length,
-  });
-
-  // Compute embeddings
   const emb = new EmbeddingsClient(googleApiKey);
-  const seedText = normalizeTextForEmbedding(seed.title, seed.abstract);
-  const candidateTexts = candidatesToEmbed.map((p) => normalizeTextForEmbedding(p.title, p.abstract));
 
-  const [seedVec] = await emb.embedTexts([seedText], config.embeddingsModel);
-  if (!seedVec) throw new Error('Seed embedding failed');
-  const candVecs = await emb.embedTexts(candidateTexts, config.embeddingsModel);
-  if (candVecs.length !== candidatesToEmbed.length) {
-    throw new Error('Candidate embedding count mismatch');
+  // Step 1: Get or compute seed embedding
+  let seedVec: number[];
+  if (db && seed.paperId) {
+    const cached = await db.getPaperEmbedding(seed.paperId);
+    if (cached) {
+      seedVec = cached;
+      log.info('[SemanticGating] Loaded seed embedding from DB');
+    } else {
+      const seedText = normalizeTextForEmbedding(seed.title, seed.abstract);
+      const [computed] = await emb.embedTexts([seedText], params.tenantId, config.embeddingsModel);
+      if (!computed) throw new Error('Seed embedding failed');
+      seedVec = computed;
+      
+      // Store for future use
+      try {
+        await db.upsertPaperEmbedding(seed.paperId, seedVec);
+      } catch (err) {
+        log.warn('[SemanticGating] Failed to store seed embedding', { err });
+      }
+    }
+  } else {
+    const seedText = normalizeTextForEmbedding(seed.title, seed.abstract);
+    const [computed] = await emb.embedTexts([seedText], params.tenantId, config.embeddingsModel);
+    if (!computed) throw new Error('Seed embedding failed');
+    seedVec = computed;
   }
 
-  // Compute similarities
-  const withSim = candidatesToEmbed.map((p, i) => ({
-    paper: p,
-    sim: cosineSimilarity(seedVec, candVecs[i]!),
-  }));
+  // Step 2: Get candidates with embeddings from DB
+  const candidatesToEmbed = candidates.slice(0, config.maxCandidatesToEmbed);
+  const candidateIds = candidatesToEmbed.map(p => p.paperId).filter(Boolean) as string[];
+  
+  let dbResults: Array<{ paper: UnifiedPaper; sim: number }> = [];
+  let candidatesNeedingEmbedding = candidatesToEmbed;
+  
+  if (db && candidateIds.length > 0) {
+    try {
+      // Query DB for similar papers
+      const similar = await db.findSimilarPapers({
+        queryEmbedding: seedVec,
+        limit: config.maxCandidatesToEmbed * 2, // Get more to account for filtering
+        similarityThreshold: config.semanticThreshold,
+        excludePaperIds: [seed.paperId].filter(Boolean) as string[],
+      });
+      
+      // Map results to candidates
+      const dbResultMap = new Map(similar.map(s => [s.paper_id, s.similarity]));
+      dbResults = candidatesToEmbed
+        .filter(p => p.paperId && dbResultMap.has(p.paperId))
+        .map(p => ({
+          paper: p,
+          sim: dbResultMap.get(p.paperId!)!,
+        }));
+      
+      // Filter out candidates that were found in DB
+      candidatesNeedingEmbedding = candidatesToEmbed.filter(
+        p => !p.paperId || !dbResultMap.has(p.paperId)
+      );
+      
+      log.info('[SemanticGating] Found embeddings in DB', {
+        fromDb: dbResults.length,
+        needComputation: candidatesNeedingEmbedding.length,
+      });
+    } catch (err) {
+      log.warn('[SemanticGating] DB query failed, computing all embeddings', { err });
+      candidatesNeedingEmbedding = candidatesToEmbed;
+    }
+  }
+
+  // Step 3: Compute embeddings for candidates not in DB
+  let computedResults: Array<{ paper: UnifiedPaper; sim: number }> = [];
+  
+  if (candidatesNeedingEmbedding.length > 0) {
+    const candidateTexts = candidatesNeedingEmbedding.map((p) => 
+      normalizeTextForEmbedding(p.title, p.abstract)
+    );
+    const candVecs = await emb.embedTexts(candidateTexts, params.tenantId, config.embeddingsModel);
+    
+    computedResults = candidatesNeedingEmbedding.map((p, i) => ({
+      paper: p,
+      sim: cosineSimilarity(seedVec, candVecs[i]!),
+    }));
+    
+    // Store computed embeddings in DB
+    if (db) {
+      const storePromises = candidatesNeedingEmbedding.map(async (p, i) => {
+        if (p.paperId && candVecs[i]) {
+          try {
+            await db.upsertPaperEmbedding(p.paperId, candVecs[i]!);
+          } catch (err) {
+            // Non-fatal, log but continue
+          }
+        }
+      });
+      await Promise.allSettled(storePromises);
+    }
+  }
+
+  // Step 4: Merge DB results with computed results
+  const withSim = [...dbResults, ...computedResults];
 
   const similarities = withSim.map((x) => x.sim).sort((a, b) => a - b);
   const similarityMin = similarities[0] ?? 0;
@@ -423,6 +502,8 @@ export async function selectCorpusUnified(params: {
   seedAuthors?: string[];
   ssApiKey?: string;
   googleApiKey: string;
+  tenantId: string;
+  db?: DatabaseClient;
   config?: Partial<SelectionConfig>;
   logger?: {
     info: (msg: string, ctx?: Record<string, unknown>) => void;
@@ -473,7 +554,9 @@ export async function selectCorpusUnified(params: {
     seed,
     candidates,
     googleApiKey: params.googleApiKey,
+    tenantId: params.tenantId,
     config: cfg,
+    db: params.db,
     logger,
   });
 

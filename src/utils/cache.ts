@@ -81,14 +81,16 @@ export function buildCacheKey(parts: CacheKeyParts): {
   };
 }
 
-async function ensureCacheDir(): Promise<void> {
-  await fs.mkdir(CACHE_ROOT, { recursive: true });
+async function ensureCacheDir(tenantId: string): Promise<void> {
+  const tenantDir = path.join(CACHE_ROOT, tenantId);
+  await fs.mkdir(tenantDir, { recursive: true });
 }
 
 export async function readCache<T>(
-  cacheKey: string
+  cacheKey: string,
+  tenantId: string
 ): Promise<CacheEntry<T> | null> {
-  const filePath = path.join(CACHE_ROOT, `${cacheKey}.json`);
+  const filePath = path.join(CACHE_ROOT, tenantId, `${cacheKey}.json`);
   try {
     const data = await fs.readFile(filePath, 'utf8');
     return JSON.parse(data) as CacheEntry<T>;
@@ -102,10 +104,11 @@ export async function readCache<T>(
 
 export async function writeCache<T>(
   cacheKey: string,
-  entry: CacheEntry<T>
+  entry: CacheEntry<T>,
+  tenantId: string
 ): Promise<void> {
-  await ensureCacheDir();
-  const filePath = path.join(CACHE_ROOT, `${cacheKey}.json`);
+  await ensureCacheDir(tenantId);
+  const filePath = path.join(CACHE_ROOT, tenantId, `${cacheKey}.json`);
   const tmpPath = `${filePath}.${randomUUID()}.tmp`;
   const payload = JSON.stringify(entry);
   await fs.writeFile(tmpPath, payload, { encoding: 'utf8' });

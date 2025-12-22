@@ -7,6 +7,7 @@ import { DatabaseClient } from '../db/client';
 import { PROMPT_VERSIONS, SCHEMA_VERSIONS } from '../agents/versions';
 import { computeDerivedHash, writeDerivedCache, readDerivedCache } from '../cache/derived';
 import { buildSubgraph } from '../reasoning/buildSubgraph';
+import { decrypt } from '../services/encryption';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -48,9 +49,24 @@ export async function runReasoningBatch(
     PROMPT_VERSIONS.reasoning
   );
 
+  const tenantId = db.tenantId;
+  const tenantSettings = await db.getTenantSettings();
+  const executionMode = tenantSettings?.execution_mode || 'hosted';
+  
+  let tenantApiKey: string | undefined;
+  if (executionMode === 'byo_key' && tenantSettings?.api_key_encrypted) {
+    try {
+      tenantApiKey = await decrypt(tenantSettings.api_key_encrypted);
+    } catch (error) {
+      logger.error(`Failed to decrypt tenant API key: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to decrypt tenant API key for BYO key mode');
+    }
+  }
+
   const cached = await readDerivedCache<typeof snapshotPayload>(
     'graph_snapshot',
-    graphSnapshotHash
+    graphSnapshotHash,
+    tenantId
   );
   if (cached) {
     logger.info(`[ReasoningBatch] Using cached graph snapshot`);
@@ -60,7 +76,8 @@ export async function runReasoningBatch(
       graphSnapshotHash,
       snapshotPayload,
       SCHEMA_VERSIONS.insight,
-      PROMPT_VERSIONS.reasoning
+      PROMPT_VERSIONS.reasoning,
+      tenantId
     );
   }
 
@@ -78,6 +95,9 @@ export async function runReasoningBatch(
       schemaVersion: SCHEMA_VERSIONS.insight,
       provider: 'gemini',
       modelOverride: AGENT_MODELS.reasoning,
+      tenantId,
+      executionMode,
+      apiKeyOverride: tenantApiKey,
     }
   );
 

@@ -6,3 +6,5 @@ export { registerInsightsRoutes } from './insights';
 export { registerStatsRoutes } from './stats';
 export { registerPipelineRoutes } from './pipeline';
 export { registerNodesRoutes } from './nodes';
+export { registerUsageRoutes } from './usage';
+export { registerEntityLinksRoutes } from './entityLinks';

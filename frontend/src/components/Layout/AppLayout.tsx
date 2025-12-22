@@ -6,9 +6,10 @@ interface AppLayoutProps {
     sidebar?: ReactNode;
     detailPanel?: ReactNode;
     onSearchClick?: () => void;
+    onInsightsClick?: () => void;
 }
 
-export function AppLayout({ children, sidebar, detailPanel, onSearchClick }: AppLayoutProps) {
+export function AppLayout({ children, sidebar, detailPanel, onSearchClick, onInsightsClick }: AppLayoutProps) {
     return (
         <>
             <div className={styles.appLayout}>
@@ -34,14 +35,21 @@ export function AppLayout({ children, sidebar, detailPanel, onSearchClick }: App
                         </div>
 
                         <div className={styles.headerActions}>
-                            <button className={styles.headerBtn} onClick={onSearchClick}>
+                            <button className={styles.headerBtn} onClick={onSearchClick} aria-label="Search">
                                 <svg className={styles.headerBtnIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <circle cx="11" cy="11" r="8" />
                                     <line x1="21" y1="21" x2="16.65" y2="16.65" />
                                 </svg>
                                 Search
                             </button>
-                            <button className={styles.headerBtn}>
+                            <button className={styles.headerBtn} onClick={onInsightsClick} aria-label="View Insights">
+                                <svg className={styles.headerBtnIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
+                                </svg>
+                                Insights
+                            </button>
+                            <button className={styles.headerBtn} aria-label="Export">
                                 <svg className={styles.headerBtnIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                                     <polyline points="22,6 12,13 2,6" />

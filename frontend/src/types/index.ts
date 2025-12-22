@@ -23,7 +23,7 @@ export interface Edge {
   created_at: string;
 }
 
-export type RelationshipType = 
+export type RelationshipType =
   | 'extends'
   | 'improves'
   | 'uses'
@@ -73,7 +73,7 @@ export interface InferredInsight {
   created_at: string;
 }
 
-export type InsightType = 
+export type InsightType =
   | 'transitive_relationship'
   | 'cluster_analysis'
   | 'anomaly_detection'
@@ -108,6 +108,8 @@ export interface GraphNode {
   y?: number;
   fx?: number | null;
   fy?: number | null;
+  vx?: number;  // D3 velocity x
+  vy?: number;  // D3 velocity y
 }
 
 export interface GraphLink {

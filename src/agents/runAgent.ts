@@ -16,6 +16,7 @@ import {
 } from '../utils/cache';
 import { PROMPT_VERSIONS, SCHEMA_VERSIONS } from './versions';
 import { limit } from '../utils/limiter';
+import { createUsageTrackingService } from '../services/usageTracking';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -89,6 +90,11 @@ interface CacheOptions {
   provider?: CacheProvider;
   modelOverride?: string;
   disableCache?: boolean;
+  tenantId: string; // Required for multi-tenant cache isolation
+  executionMode?: 'hosted' | 'byo_key'; // Execution mode for usage tracking
+  userId?: string; // User ID for usage tracking
+  jobId?: string; // Job ID for usage tracking
+  apiKeyOverride?: string; // Optional API key override (for BYO key mode)
 }
 
 export async function runAgent<T>(
@@ -100,9 +106,17 @@ export async function runAgent<T>(
   logger: Logger = defaultLogger,
   cacheOptions?: CacheOptions
 ): Promise<T> {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    throw new Error('GOOGLE_API_KEY environment variable is not set');
+  // Determine API key based on execution mode
+  let apiKey: string;
+  if (cacheOptions?.apiKeyOverride) {
+    // BYO key mode - use tenant's API key
+    apiKey = cacheOptions.apiKeyOverride;
+  } else {
+    // Hosted mode - use platform API key
+    apiKey = process.env.GOOGLE_API_KEY || '';
+    if (!apiKey) {
+      throw new Error('GOOGLE_API_KEY environment variable is not set');
+    }
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -129,7 +143,7 @@ export async function runAgent<T>(
       schemaVersion: cacheVersion.schema,
       input: cacheOptions.input,
     });
-    cacheHitEntry = await readCache<T>(key);
+    cacheHitEntry = await readCache<T>(key, cacheOptions.tenantId);
     if (cacheHitEntry) {
       logger.info(`[${agentName}] Cache hit`);
       return cacheHitEntry.value;
@@ -301,6 +315,38 @@ export async function runAgent<T>(
         logger.info(`[${agentName}] Success on attempt ${attempt}${modeNote}`);
         const durationMs = Date.now() - startedAt;
 
+        const usageMetadata = (response as any)?.response?.usageMetadata;
+        const inputTokens = usageMetadata?.promptTokenCount || 0;
+        const outputTokens = usageMetadata?.candidatesTokenCount || usageMetadata?.totalTokenCount - inputTokens || 0;
+
+        if (cacheOptions && cacheOptions.tenantId) {
+          try {
+            const usageTracking = createUsageTrackingService();
+            const executionMode = cacheOptions.executionMode || 'hosted';
+            const pipelineStage = agentName.toLowerCase().replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+            
+            await usageTracking.logLLMUsage({
+              tenant_id: cacheOptions.tenantId,
+              user_id: cacheOptions.userId,
+              pipeline_stage: pipelineStage,
+              agent_name: agentName,
+              model: modelName,
+              provider,
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+              execution_mode: executionMode,
+              job_id: cacheOptions.jobId,
+              metadata: {
+                attempt,
+                retry_mode: retryMode,
+                duration_ms: durationMs,
+              },
+            });
+          } catch (usageError) {
+            logger.warn(`[${agentName}] Failed to log usage: ${usageError instanceof Error ? usageError.message : String(usageError)}`);
+          }
+        }
+
         if (cacheOptions && !cacheOptions.disableCache && retryMode === 'normal') {
           const { key, inputHash } = buildCacheKey({
             agentName,
@@ -329,7 +375,7 @@ export async function runAgent<T>(
             validationResult.data
           );
 
-          await writeCache(key, entry);
+          await writeCache(key, entry, cacheOptions.tenantId);
           logger.info(`[${agentName}] Cached result`);
         }
 

@@ -6,6 +6,8 @@ import type { PaginationParams } from '../types/api';
 interface InsightsQuerystring {
   page?: string;
   limit?: string;
+  q?: string;
+  type?: string;
 }
 
 interface InsightParams {
@@ -19,11 +21,13 @@ export class InsightsController {
     request: FastifyRequest<{ Querystring: InsightsQuerystring }>,
     reply: FastifyReply
   ) {
-    const params: PaginationParams = {
+    const params: PaginationParams & { q?: string; type?: string } = {
       page: request.query.page ? parseInt(request.query.page, 10) : undefined,
       limit: request.query.limit
         ? parseInt(request.query.limit, 10)
         : undefined,
+      q: request.query.q,
+      type: request.query.type,
     };
 
     const result = await this.insightsService.getAllInsights(params);

@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { createDatabaseClient } from '../db/client';
 import { errorHandler } from './middleware';
 import {
   registerPapersRoutes,
@@ -12,6 +11,8 @@ import {
   registerStatsRoutes,
   registerPipelineRoutes,
   registerNodesRoutes,
+  registerUsageRoutes,
+  registerEntityLinksRoutes,
 } from './routes';
 
 async function buildServer() {
@@ -40,23 +41,22 @@ async function buildServer() {
   // Register error handler
   fastify.setErrorHandler(errorHandler);
 
-  // Initialize database client
-  const db = createDatabaseClient();
-
-  // Health check
+  // Health check (no tenant required)
   fastify.get('/health', async () => {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
-  // Register all routes
-  registerPapersRoutes(fastify, db);
-  registerGraphRoutes(fastify, db);
-  registerEdgesRoutes(fastify, db);
-  registerSearchRoutes(fastify, db);
-  registerInsightsRoutes(fastify, db);
-  registerStatsRoutes(fastify, db);
+  // Register all routes (routes will create tenant-scoped database clients)
+  registerPapersRoutes(fastify);
+  registerGraphRoutes(fastify);
+  registerEdgesRoutes(fastify);
+  registerSearchRoutes(fastify);
+  registerInsightsRoutes(fastify);
+  registerStatsRoutes(fastify);
   registerPipelineRoutes(fastify);
-  registerNodesRoutes(fastify, db);
+  registerNodesRoutes(fastify);
+  registerUsageRoutes(fastify);
+  await registerEntityLinksRoutes(fastify);
 
   return fastify;
 }

@@ -49,16 +49,17 @@ export function computeDerivedHash(
   return sha256(payload);
 }
 
-async function ensureCacheDir(type: DerivedType): Promise<void> {
-  const dir = path.join(DERIVED_CACHE_ROOT, type);
+async function ensureCacheDir(type: DerivedType, tenantId: string): Promise<void> {
+  const dir = path.join(DERIVED_CACHE_ROOT, tenantId, type);
   await fs.mkdir(dir, { recursive: true });
 }
 
 export async function readDerivedCache<T>(
   type: DerivedType,
-  hash: string
+  hash: string,
+  tenantId: string
 ): Promise<T | null> {
-  const filePath = path.join(DERIVED_CACHE_ROOT, type, `${hash}.json`);
+  const filePath = path.join(DERIVED_CACHE_ROOT, tenantId, type, `${hash}.json`);
   try {
     const data = await fs.readFile(filePath, 'utf8');
     const entry = JSON.parse(data) as DerivedCacheEntry<T>;
@@ -86,10 +87,11 @@ export async function writeDerivedCache<T>(
   hash: string,
   value: T,
   schemaVersion: string,
-  promptVersion: string
+  promptVersion: string,
+  tenantId: string
 ): Promise<void> {
-  await ensureCacheDir(type);
-  const filePath = path.join(DERIVED_CACHE_ROOT, type, `${hash}.json`);
+  await ensureCacheDir(type, tenantId);
+  const filePath = path.join(DERIVED_CACHE_ROOT, tenantId, type, `${hash}.json`);
   const entry: DerivedCacheEntry<T> = {
     type,
     hash,

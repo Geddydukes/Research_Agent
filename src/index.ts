@@ -25,8 +25,10 @@ async function main(): Promise<void> {
   }
 
   try {
-    const db = createDatabaseClient();
-    const result = await runPipeline(paperInput, db);
+    // For CLI usage, use default tenant (single-tenant mode)
+    const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const db = createDatabaseClient(DEFAULT_TENANT_ID);
+    const result = await runPipeline(paperInput, DEFAULT_TENANT_ID, db);
 
     if (result.success) {
       console.log('Pipeline completed successfully!');
