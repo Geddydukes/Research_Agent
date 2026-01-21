@@ -67,6 +67,9 @@ This ensures only semantically relevant papers consume expensive LLM extraction 
 
 ## Results
 
+<img width="1848" height="903" alt="image" src="https://github.com/user-attachments/assets/d2744443-496f-4958-90e9-cc4be8fdc5c4" />
+
+
 Processed 46 papers from the Gaussian Splatting domain, extracting:
 - **228 entities** (102 Methods, 38 Concepts, 28 Datasets, 21 Metrics)
 - **267 relationships** (improves_on, uses, evaluates, introduces, extends, compares_to)
