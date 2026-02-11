@@ -162,7 +162,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     setGraphData: (data) => {
         const forceGraphData = transformToForceGraph(data);
 
-        // Extract unique types
         const entityTypes = new Set(data.nodes.map(n => n.type.toLowerCase()));
         const relationshipTypes = new Set(data.edges.map(e => e.relationship_type.toLowerCase()));
 
@@ -276,8 +275,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
 
-        // Filter links by active relationship types, valid nodes, AND confidence threshold
-        const filteredLinks = forceGraphData.links.filter(link => {
+        let filteredLinks = forceGraphData.links.filter(link => {
             const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
             const targetId = typeof link.target === 'string' ? link.target : link.target.id;
 
@@ -289,7 +287,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
             );
         });
 
-        // Optionally hide nodes that have no connections
         if (hideUnconnectedNodes) {
             const connectedNodeIds = new Set<string>();
             filteredLinks.forEach(link => {
