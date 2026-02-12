@@ -95,11 +95,12 @@ async function extractUser(request: FastifyRequest): Promise<{ id?: string; emai
   
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey) {
+    const tokenVerificationKey =
+      process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !tokenVerificationKey) {
       return undefined;
     }
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const supabase = createClient(supabaseUrl, tokenVerificationKey);
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
