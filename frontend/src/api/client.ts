@@ -1,12 +1,14 @@
-import type { GraphData, EdgeModalData, InferredInsight, Paper, Entity, Edge } from '../types';
+import type { GraphData, EdgeModalData, InferredInsight, Paper, Entity, Edge, TenantMembership, PipelineJob, ArxivPaper } from '../types';
 import {
     mockGraphData,
+    mockInsights,
     mockPapers,
     getMockEdgeModal,
     getMockPapersForNode,
     getMockEdgesForNode,
     getMockInsightsForEdge
 } from '../mocks/mockData';
+import { supabase } from '../auth/supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 // Use real API if VITE_API_URL is set, otherwise default to mock for local dev
@@ -19,23 +21,42 @@ class ApiClient {
     constructor(baseUrl: string, useMock: boolean = true) {
         this.baseUrl = baseUrl;
         this.useMock = useMock;
-        console.log(`API Client initialized: baseUrl=${baseUrl}, useMock=${useMock}`);
+    }
+
+    private async getAuthHeaders(): Promise<Record<string, string>> {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || null;
+        const tenantId = typeof window !== 'undefined' ? localStorage.getItem('tenant_id') : null;
+        return {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
+        };
     }
 
     private async fetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
         const url = `${this.baseUrl}${endpoint}`;
-        console.log(`Fetching: ${url}`);
+        const authHeaders = await this.getAuthHeaders();
 
         const response = await fetch(url, {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
+                ...authHeaders,
                 ...options?.headers,
             },
         });
 
         if (!response.ok) {
-            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            const text = await response.text();
+            let message = `API Error: ${response.status} ${response.statusText}`;
+            try {
+                const json = JSON.parse(text);
+                const msg = json?.error?.message;
+                if (typeof msg === 'string' && msg.length > 0) message = msg;
+            } catch {
+                if (text.length > 0 && text.length < 200) message = text;
+            }
+            throw new Error(message);
         }
 
         return response.json();
@@ -113,14 +134,178 @@ class ApiClient {
         return response.data || [];
     }
 
-    // Get all insights
+    // Get all insights (API returns { data, pagination }; we normalize to { data, count })
     async getAllInsights(page = 1, limit = 50): Promise<{ data: InferredInsight[]; count: number }> {
         if (this.useMock) {
             await new Promise(resolve => setTimeout(resolve, 300));
-            const { mockInsights } = await import('../mocks/mockData');
             return { data: mockInsights, count: mockInsights.length };
         }
-        return this.fetch<{ data: InferredInsight[]; count: number }>(`/api/insights?page=${page}&limit=${limit}`);
+        const res = await this.fetch<{
+            data: InferredInsight[];
+            count?: number;
+            pagination?: { total?: number };
+        }>(`/api/insights?page=${page}&limit=${limit}`);
+        const list = res?.data ?? [];
+        const count = res?.count ?? res?.pagination?.total ?? list.length;
+        return { data: list, count };
+    }
+
+    // Get tenant memberships for current user
+    async getTenants(): Promise<TenantMembership[]> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return [
+                {
+                    role: 'owner',
+                    tenant: {
+                        id: '00000000-0000-0000-0000-000000000000',
+                        name: 'Default Workspace',
+                        slug: 'default',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    },
+                },
+            ];
+        }
+        const response = await this.fetch<{ data: TenantMembership[] }>('/api/tenants');
+        return response.data || [];
+    }
+
+    // Get tenant settings
+    async getSettings(): Promise<Record<string, unknown>> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return {
+                execution_mode: 'hosted',
+                max_reasoning_depth: 2,
+                semantic_gating_threshold: 0.7,
+                allow_speculative_edges: false,
+                enabled_relationship_types: [],
+                api_key_configured: false,
+            };
+        }
+        const response = await this.fetch<{ data: Record<string, unknown> }>('/api/settings');
+        return response.data || {};
+    }
+
+    async updateSettings(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return {
+                ...payload,
+                api_key_configured: Boolean(payload.api_key) || false,
+            };
+        }
+        const response = await this.fetch<{ data: Record<string, unknown> }>('/api/settings', {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+        });
+        return response.data || {};
+    }
+
+    async validateApiKey(apiKey: string): Promise<{ valid: boolean; message?: string }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return { valid: true };
+        }
+        const response = await this.fetch<{ data: { valid: boolean; message?: string } }>(
+            '/api/settings/validate-key',
+            {
+                method: 'POST',
+                body: JSON.stringify({ api_key: apiKey }),
+            }
+        );
+        return response.data;
+    }
+
+    async getReviewGraph(): Promise<GraphData> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return mockGraphData;
+        }
+        const response = await this.fetch<{ data: GraphData }>('/api/graphreview');
+        return response.data;
+    }
+
+    async updateNodeReview(items: Array<{ id: number; status: string; reason?: string; adjusted_confidence?: number }>): Promise<void> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return;
+        }
+        await this.fetch('/api/review/nodes', {
+            method: 'POST',
+            body: JSON.stringify({ items }),
+        });
+    }
+
+    async updateEdgeReview(items: Array<{ id: number; status: string; reason?: string }>): Promise<void> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return;
+        }
+        await this.fetch('/api/review/edges', {
+            method: 'POST',
+            body: JSON.stringify({ items }),
+        });
+    }
+
+    async processPaper(payload: { paper_id: string; title?: string; raw_text: string; metadata?: Record<string, unknown>; reasoning_depth?: number }): Promise<{ jobId: string; status: string }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            return { jobId: 'mock-job', status: 'pending' };
+        }
+        const response = await this.fetch<{ data: { jobId: string; status: string } }>('/api/pipeline/process', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+        return response.data;
+    }
+
+    async processFile(payload: { file_name: string; file_base64: string; reasoning_depth?: number }): Promise<{ jobId: string; status: string }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            return { jobId: 'mock-job', status: 'pending' };
+        }
+        const response = await this.fetch<{ data: { jobId: string; status: string } }>('/api/pipeline/process-file', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+        return response.data;
+    }
+
+    async processUrl(payload: { url: string; paper_id?: string; title?: string; reasoning_depth?: number }): Promise<{ jobId: string; status: string }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            return { jobId: 'mock-job', status: 'pending' };
+        }
+        const response = await this.fetch<{ data: { jobId: string; status: string } }>('/api/pipeline/process-url', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+        return response.data;
+    }
+
+    async listJobs(page = 1, limit = 20): Promise<{ data: PipelineJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return {
+                data: [],
+                pagination: { page, limit, total: 0, totalPages: 0 },
+            };
+        }
+        const response = await this.fetch<{ data: PipelineJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+            `/api/pipeline/jobs?page=${page}&limit=${limit}`
+        );
+        return response;
+    }
+
+    async getJobStatus(jobId: string): Promise<PipelineJob> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return { jobId, status: 'completed' };
+        }
+        const response = await this.fetch<{ data: PipelineJob }>(`/api/pipeline/status/${jobId}`);
+        return response.data;
     }
 
     // Search entities and papers
@@ -141,6 +326,97 @@ class ApiClient {
         }
         const response = await this.fetch<{ data: { nodes: Entity[]; papers: Paper[] } }>(`/api/search?q=${encodeURIComponent(query)}`);
         return { nodes: response.data.nodes || [], papers: response.data.papers || [] };
+    }
+
+    // Semantic search for similar papers using embeddings
+    async semanticSearch(query: string, limit = 20, threshold = 0.0): Promise<{
+        papers: Array<{ paper: Paper; similarity: number }>;
+        query: string;
+        count: number;
+    }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Mock semantic search - just return some papers with fake similarity
+            const papers = mockPapers.slice(0, limit).map(p => ({
+                paper: p,
+                similarity: Math.random() * 0.5 + 0.5 // Random 0.5-1.0
+            }));
+            return { papers, query, count: papers.length };
+        }
+
+        const params = new URLSearchParams({
+            q: query,
+            limit: limit.toString(),
+            threshold: threshold.toString(),
+        });
+
+        const response = await this.fetch<{
+            data: {
+                papers: Array<{ paper: Paper; similarity: number }>;
+                query: string;
+                count: number;
+            };
+        }>(`/api/search/semantic?${params}`);
+
+        return response.data;
+    }
+
+    async searchArxiv(query: string, limit = 20): Promise<{ data: ArxivPaper[] }> {
+        if (this.useMock) {
+            await new Promise(resolve => setTimeout(resolve, 400));
+            return {
+                data: [
+                    { paperId: '2301.00001', title: 'Mock arXiv Result', abstract: 'Abstract text.', year: 2023, externalIds: { arxiv: '2301.00001' } },
+                ],
+            };
+        }
+        const params = new URLSearchParams({ q: query.trim(), limit: String(Math.min(40, Math.max(1, limit))) });
+        const response = await this.fetch<{ data: ArxivPaper[] }>(`/api/arxiv?${params}`);
+        return response;
+    }
+
+    async downloadExport(format: 'graphml' | 'gexf' | 'csv-bundle' | 'json'): Promise<void> {
+        if (this.useMock) {
+            const blob = new Blob(['Mock export not available. Use real API.'], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `export-${format}.${format === 'csv-bundle' ? 'zip' : format}`;
+            a.click();
+            URL.revokeObjectURL(url);
+            return;
+        }
+        const authHeaders = await this.getAuthHeaders();
+        const url = `${this.baseUrl}/api/export?format=${encodeURIComponent(format)}`;
+        const response = await fetch(url, {
+            headers: {
+                ...authHeaders,
+            },
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            let message = `Export failed: ${response.status}`;
+            try {
+                const json = JSON.parse(text);
+                if (typeof json?.error?.message === 'string') message = json.error.message;
+            } catch {
+                if (text.length > 0 && text.length < 200) message = text;
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition');
+        let filename = `knowledge-graph.${format === 'csv-bundle' ? 'zip' : format}`;
+        if (disposition) {
+            const match = /filename="?([^";\n]+)"?/.exec(disposition);
+            if (match?.[1]) filename = match[1].trim();
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(objectUrl);
     }
 
     // Toggle mock mode

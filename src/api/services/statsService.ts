@@ -38,10 +38,10 @@ export class StatsService {
       edgesResult,
       insightsResult,
     ] = await Promise.all([
-      client.from('papers').select('*', { count: 'exact', head: true }),
-      client.from('nodes').select('*', { count: 'exact', head: true }),
-      client.from('edges').select('*', { count: 'exact', head: true }),
-      client.from('inferred_insights').select('*', { count: 'exact', head: true }),
+      client.from('papers').select('*', { count: 'exact', head: true }).eq('tenant_id', this.db.tenantId),
+      client.from('nodes').select('*', { count: 'exact', head: true }).eq('tenant_id', this.db.tenantId),
+      client.from('edges').select('*', { count: 'exact', head: true }).eq('tenant_id', this.db.tenantId),
+      client.from('inferred_insights').select('*', { count: 'exact', head: true }).eq('tenant_id', this.db.tenantId),
     ]);
 
     if (papersResult.error) {
@@ -60,7 +60,8 @@ export class StatsService {
     // Get nodes by type
     const { data: nodesData } = await client
       .from('nodes')
-      .select('type');
+      .select('type')
+      .eq('tenant_id', this.db.tenantId);
 
     const nodesByType: Record<string, number> = {};
     if (nodesData) {
@@ -73,7 +74,8 @@ export class StatsService {
     // Get edges by type
     const { data: edgesData } = await client
       .from('edges')
-      .select('relationship_type');
+      .select('relationship_type')
+      .eq('tenant_id', this.db.tenantId);
 
     const edgesByType: Record<string, number> = {};
     if (edgesData) {
@@ -135,6 +137,7 @@ export class StatsService {
     const { data: paperData, error: paperError } = await client
       .from('papers')
       .select('*')
+      .eq('tenant_id', this.db.tenantId)
       .eq('paper_id', paperId)
       .maybeSingle();
 

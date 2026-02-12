@@ -66,7 +66,9 @@ export async function runMigrations(db: DatabaseClient): Promise<void> {
 
 async function main(): Promise<void> {
   try {
-    const db = createDatabaseClient();
+    // For migrations, we use a system tenant ID (can use default tenant)
+    const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const db = createDatabaseClient(DEFAULT_TENANT_ID);
     await runMigrations(db);
     console.log('[Migration] Success');
     process.exit(0);

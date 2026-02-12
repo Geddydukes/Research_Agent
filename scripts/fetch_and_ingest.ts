@@ -43,7 +43,9 @@ async function main() {
   const maxCandidatesToEmbed = Number(process.env.MAX_CANDIDATES_TO_EMBED || '500');
   const maxSelectedPapers = Number(process.env.MAX_SELECTED_PAPERS || '100');
 
-  const db = createDatabaseClient();
+  // For CLI usage, use default tenant (single-tenant mode)
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+  const db = createDatabaseClient(DEFAULT_TENANT_ID);
 
   // Unified selection: retrieval + semantic gating
   // Semantic gating happens BEFORE any PDF download
@@ -52,6 +54,8 @@ async function main() {
     seedTitle,
     ssApiKey,
     googleApiKey,
+    tenantId: DEFAULT_TENANT_ID,
+    db,
     config: {
       embeddingsModel,
       semanticThreshold,
@@ -132,7 +136,7 @@ async function main() {
       console.log(`[Ingest] Parsing ${downloaded.filePath}`);
       const paperInput = await parsePaperFile(downloaded.filePath);
       console.log(`[Ingest] Running pipeline for ${paperInput.paper_id}`);
-      const result = await runPipeline(paperInput, db, defaultLogger, {
+      const result = await runPipeline(paperInput, DEFAULT_TENANT_ID, db, defaultLogger, {
         forceReingest,
       });
       console.log(`[Ingest] Done ${paperInput.paper_id} success=${result.success}`);

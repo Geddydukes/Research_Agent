@@ -14,7 +14,8 @@ export async function createTestData(): Promise<{
   insights: InferredInsight[];
   cleanup: () => Promise<void>;
 }> {
-  const db = createDatabaseClient();
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+  const db = createDatabaseClient(DEFAULT_TENANT_ID);
   const testPrefix = `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
   // Create test papers
@@ -41,6 +42,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'A test method' },
     original_confidence: 0.9,
     adjusted_confidence: 0.85,
+    review_status: 'approved',
   });
 
   const node2 = await db.insertNode({
@@ -49,6 +51,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'A test dataset' },
     original_confidence: 0.8,
     adjusted_confidence: 0.75,
+    review_status: 'approved',
   });
 
   const node3 = await db.insertNode({
@@ -57,6 +60,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'Accuracy metric' },
     original_confidence: 0.95,
     adjusted_confidence: 0.9,
+    review_status: 'approved',
   });
 
   // Create test sections
@@ -86,6 +90,7 @@ export async function createTestData(): Promise<{
     confidence: 0.9,
     evidence: 'Paper mentions using this dataset',
     provenance: { source_paper_id: paper1.paper_id },
+    review_status: 'approved',
   });
 
   const edge2 = await db.insertEdge({
@@ -95,6 +100,7 @@ export async function createTestData(): Promise<{
     confidence: 0.85,
     evidence: 'Method evaluated with accuracy',
     provenance: { source_paper_id: paper1.paper_id },
+    review_status: 'approved',
   });
 
   // Create test insights
@@ -174,7 +180,8 @@ export async function createTestServerWithRealDb(): Promise<{
   testData: Awaited<ReturnType<typeof createTestData>>;
   cleanup: () => Promise<void>;
 }> {
-  const db = createDatabaseClient();
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+  const db = createDatabaseClient(DEFAULT_TENANT_ID);
   const testData = await createTestData();
 
   const cors = require('@fastify/cors');

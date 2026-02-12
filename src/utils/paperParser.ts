@@ -11,29 +11,39 @@ export async function parsePaperFile(filePath: string): Promise<PaperInput> {
   const fileBuffer = fs.readFileSync(filePath);
   const t0 = Date.now();
 
+  const fileName = path.basename(filePath, ext);
+  const result = await parsePaperBuffer(fileBuffer, ext, fileName);
+
+  const elapsed = Date.now() - t0;
+  console.log(`[Parser] Parsed ${filePath} in ${elapsed}ms`);
+
+  return result;
+}
+
+export async function parsePaperBuffer(
+  buffer: Buffer,
+  ext: string,
+  fileName = 'uploaded'
+): Promise<PaperInput> {
   let rawText: string;
   let metadata: Record<string, unknown> = {};
 
-  switch (ext) {
+  switch (ext.toLowerCase()) {
     case '.pdf':
-      rawText = await parsePDF(fileBuffer);
+      rawText = await parsePDF(buffer);
       break;
     case '.docx':
-      rawText = await parseDOCX(fileBuffer);
+      rawText = await parseDOCX(buffer);
       break;
     case '.json':
-      return parseJSON(fileBuffer);
+      return parseJSON(buffer);
     default:
       throw new Error(
         `Unsupported file type: ${ext}. Supported formats: .pdf, .docx, .json`
       );
   }
 
-  const fileName = path.basename(filePath, ext);
   const paperId = fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-  const elapsed = Date.now() - t0;
-  console.log(`[Parser] Parsed ${filePath} in ${elapsed}ms`);
 
   return {
     paper_id: paperId,
@@ -168,4 +178,3 @@ function extractTitle(text: string): string | undefined {
   }
   return undefined;
 }
-

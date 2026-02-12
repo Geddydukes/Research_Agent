@@ -127,15 +127,17 @@ This phase prioritizes **recall**, not precision.
 
 All retrieved candidates pass through a mandatory **semantic similarity gating** stage:
 
-- The seed paper’s title and abstract are embedded
-- Candidate paper titles and abstracts are embedded
-- Cosine similarity is computed
+- The seed paper's title and abstract are embedded (or retrieved from database if already stored)
+- Candidate paper titles and abstracts are embedded (or retrieved from database if already stored)
+- Cosine similarity is computed using pgvector
 - Candidates below a configurable similarity threshold are discarded
 - Top-K papers are selected under strict upper bounds
 
+**Performance optimization**: Paper embeddings are stored permanently in the database using pgvector. During semantic gating, the system first checks for existing embeddings before computing new ones, significantly reducing API calls and latency for papers already in the corpus.
+
 This design ensures the system can truthfully state:
 
-> “Paper ingestion is gated by semantic similarity, independent of retrieval source availability.”
+> "Paper ingestion is gated by semantic similarity, independent of retrieval source availability."
 
 ### Diagram: Semantic Discovery & Gating
 
@@ -318,6 +320,9 @@ Diagram: Validation & Persistence
 
     Entities[Extracted Entities] --> Canon1[Canonicalize Names<br/>lowercase, normalize]
     Edges[Extracted Edges] --> Canon2[Canonicalize Source/Target]
+    Entities --> Resolve[Entity Resolution<br/>Tier A: Exact Match<br/>Tier B: Semantic Similarity]
+    Resolve --> Links[Create Entity Links<br/>alias_of relationships]
+    Links --> Views[Query-Time Resolution<br/>nodes_resolved view]
     
     Canon1 --> EntityRules[Entity Validation Rules]
     Canon2 --> EdgeRules[Edge Validation Rules]
@@ -345,6 +350,13 @@ Diagram: Validation & Persistence
     ConfCheck2 -->|< 0.3| Rejected2
     
     Approved1 --> BatchLookup[Batch Lookup Existing Nodes<br/>by canonical_name, type]
+    BatchLookup --> ResolveCheck{Exact Match?}
+    ResolveCheck -->|Yes| UseExisting[Use Existing Node]
+    ResolveCheck -->|No| SemanticCheck[Semantic Similarity Search<br/>embedding_index + rerank]
+    SemanticCheck --> LinkDecision{Create Link?}
+    LinkDecision -->|High Confidence| AutoApprove[Auto-approve alias_of]
+    LinkDecision -->|Medium Confidence| Propose[Propose for Review]
+    LinkDecision -->|No Match| CreateNew[Create New Node]
     Flagged1 --> BatchLookup
     
     BatchLookup --> Exists{Node<br/>Exists?}
@@ -383,13 +395,31 @@ This diagram makes trust boundaries explicit: probabilistic extraction is always
 
 Validated data is persisted to a Postgres database using a graph-like schema:
 
-- Papers
-- Nodes (entities)
+- Papers (with embeddings stored via pgvector)
+- Nodes (entities with dual embeddings: raw 3072-dim, index 768-dim with HNSW)
 - Edges (relationships)
+- Entity links (alias_of relationships for canonicalization)
+- Entity aliases (name variants)
 - Evidence and provenance
 - Insights
 
 All inserts are batched and idempotent. Re-ingesting the same paper does not corrupt the graph.
+
+### Vector Search Infrastructure
+
+The system uses **pgvector** for semantic similarity search:
+
+- **Paper embeddings**: Stored in `papers.embedding` (3072 dimensions from `gemini-embedding-001`)
+- **Entity embeddings**: Dual storage:
+  - `nodes.embedding_raw` (3072 dimensions) for precision reranking
+  - `nodes.embedding_index` (768 dimensions) with HNSW index for fast candidate search
+- **Similarity functions**: `find_similar_papers()` and `find_similar_nodes()` RPC functions
+- **Query-time resolution**: `nodes_resolved` and `edges_resolved` views for canonical entity resolution
+
+This infrastructure enables:
+- Fast semantic gating during corpus selection (reuses stored paper embeddings)
+- Semantic entity deduplication (two-tier resolution: exact match + embedding similarity)
+- Efficient similarity search without external vector stores
 
 ---
 
@@ -464,7 +494,23 @@ These principles ensure the system remains reliable, extensible, and intelligibl
 
 ---
 
+## API Endpoints
+
+The system exposes a RESTful API (Fastify) for programmatic access:
+
+- **Papers**: List, get details, sections, nodes, edges
+- **Graph**: Neighborhood queries, viewport, subgraph extraction
+- **Edges**: List, get details with full context (nodes, papers, insights)
+- **Search**: Semantic search across papers and entities
+- **Insights**: List and query inferred insights
+- **Statistics**: Corpus-level and paper-level stats
+- **Pipeline**: Process papers through the ingestion pipeline
+- **Nodes**: Entity management and queries
+- **Entity Links**: Manage entity canonicalization (proposals, approval/rejection, aliases)
+- **Usage**: Track API usage and limits
+
+All endpoints support tenant isolation and pagination. See `src/api/README.md` for detailed API documentation.
+
 ## Scope Note
 
-This architecture is intentionally backend-focused. While it supports rich graph exploration and explainable insights, frontend and visualization layers are treated as future work and kept separate from core ingestion and reasoning concerns.
-
+This architecture is intentionally backend-focused. While it supports rich graph exploration and explainable insights, frontend and visualization layers are treated as future work and kept separate from core ingestion and reasoning concerns. A lightweight internal visualization exists for debugging and validation but is not intended as a production UI.

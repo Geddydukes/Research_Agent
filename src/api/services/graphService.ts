@@ -69,6 +69,7 @@ export class GraphService {
     const visitedNodes = new Set<number>(startNodeIds);
     const nodes: Node[] = [];
     const edges: Edge[] = [];
+    const edgeIdSet = new Set<number>();
     let currentDepth = 0;
     let currentLevelNodes = startNodeIds;
 
@@ -98,8 +99,9 @@ export class GraphService {
           if (edges.length >= maxEdges) break;
 
           // Add edge if not already added
-          if (!edges.find((e) => e.id === edge.id)) {
+          if (!edgeIdSet.has(edge.id)) {
             edges.push(edge);
+            edgeIdSet.add(edge.id);
           }
 
           // Add connected nodes

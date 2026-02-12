@@ -38,10 +38,10 @@ The API will be available at `http://localhost:3000` (or the port specified in `
 ### Graph (Windowed for UI)
 
 - `GET /api/graph/neighborhood` - Get graph neighborhood (primary UI endpoint)
-  - Query params: `nodeId` or `paperId`, `depth`, `maxNodes`, `maxEdges`
-  - Example: `/api/graph/neighborhood?paperId=123&depth=1&maxNodes=500`
+  - Query params: `nodeId` or `paperId`, `depth` (1–20, steps from paper/node), `maxNodes`, `maxEdges`
+  - Example: `/api/graph/neighborhood?paperId=123&depth=5&maxNodes=500`
 - `GET /api/graph/viewport` - Get graph viewport centered on a paper
-  - Query params: `paperId`, `depth`, `maxNodes`
+  - Query params: `paperId`, `depth` (1–20), `maxNodes`
 - `POST /api/graph/subgraph` - Get subgraph for selected papers
   - Body: `{ "paperIds": ["id1", "id2"] }`
 - `GET /api/graph` - Get full graph (debug only, hard cap at 5000 nodes)
@@ -58,6 +58,11 @@ The API will be available at `http://localhost:3000` (or the port specified in `
 
 - `GET /api/search` - Search papers and nodes
   - Query params: `q` (required), `type` (optional: "paper" | "node"), `limit`
+- `GET /api/search/semantic` - Semantic search (embeddings)
+  - Query params: `q`, `limit`, `threshold`
+- `GET /api/arxiv` - Search arXiv (public API; no key required)
+  - Query params: `q` (required), `limit` (optional, 1–40, default 20)
+  - Returns: `{ data: ArxivPaper[] }` (paperId, title, abstract, year). Use with pipeline process-url (e.g. `https://arxiv.org/abs/{paperId}`).
 
 ### Insights
 
@@ -72,20 +77,45 @@ The API will be available at `http://localhost:3000` (or the port specified in `
 
 ### Pipeline
 
-- `POST /api/pipeline/process` - Process a paper through the pipeline (requires API key)
-  - Headers: `X-API-Key: your_api_key`
-  - Body: `{ "paper_id": "...", "title": "...", "raw_text": "...", "metadata": {...} }`
+- `POST /api/pipeline/process` - Process a paper through the pipeline (requires Supabase auth)
+  - Headers: `Authorization: Bearer <supabase access token>`
+  - Body: `{ "paper_id": "...", "title": "...", "raw_text": "...", "metadata": {...}, "reasoning_depth": 2 }`
+- `POST /api/pipeline/process-file` - Process a PDF/DOCX/JSON file (base64)
+  - Body: `{ "file_name": "paper.pdf", "file_base64": "...", "reasoning_depth": 2 }`
+- `POST /api/pipeline/process-url` - Process a remote URL (pdf/json/text)
+  - Body: `{ "url": "https://...", "paper_id": "optional-id", "reasoning_depth": 2 }`
 - `GET /api/pipeline/status/:jobId` - Check processing status
+- `GET /api/pipeline/jobs` - List pipeline jobs (pagination, optional `status`)
+
+### Settings
+
+- `GET /api/settings` - Get tenant settings (requires auth)
+- `PUT /api/settings` - Update tenant settings (requires auth)
+- `POST /api/settings/validate-key` - Validate a BYO API key (requires auth)
+
+### Tenants
+
+- `POST /api/tenants/ensure` - Ensure a tenant exists for the authenticated user
+- `GET /api/tenants` - List tenant memberships for the authenticated user
+
+### Review
+
+- `POST /api/review/nodes` - Bulk update node review status
+- `POST /api/review/edges` - Bulk update edge review status
 
 ## Authentication
 
-Write endpoints (POST `/api/pipeline/process`, POST `/api/papers`) require an API key:
+All authenticated endpoints require a Supabase access token:
 
 ```
-X-API-Key: your_api_key_here
+Authorization: Bearer <supabase access token>
 ```
 
-Set `API_KEY` in your `.env` file. In development, if `API_KEY` is not set, authentication is skipped.
+The backend verifies the token against Supabase and resolves the tenant from:
+1. `x-tenant-id` header (explicit selection)
+2. `/api/tenant/:slug` (when using slug routes)
+3. User's first tenant membership
+4. Default tenant fallback (dev)
 
 ## Architecture
 
@@ -107,7 +137,7 @@ src/api/
 
 2. **Edge Modal as First-Class**: `GET /api/edges/:edgeId` returns everything needed for the edge modal in a single request, providing a stable contract for the UI.
 
-3. **Decoupled Processing**: Pipeline processing is asynchronous and doesn't block query endpoints. Jobs are tracked in-memory (can be moved to a proper queue/DB later).
+3. **Decoupled Processing**: Pipeline processing is asynchronous and doesn't block query endpoints. Jobs are persisted in the `pipeline_jobs` table for polling and history.
 
 4. **Type Safety**: Full TypeScript support with proper types for requests and responses.
 
@@ -115,7 +145,10 @@ src/api/
 
 - `API_PORT` - Server port (default: 3000)
 - `API_HOST` - Server host (default: 0.0.0.0)
-- `API_KEY` - API key for write endpoints
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
+- `SUPABASE_ANON_KEY` - Supabase anon key (token verification)
+- `ENCRYPTION_KEY` - Key for BYOK encryption (required in production)
 - `CORS_ORIGIN` - Allowed CORS origin (default: *)
 - `LOG_LEVEL` - Logging level (default: info)
 - `NODE_ENV` - Environment (development/production)

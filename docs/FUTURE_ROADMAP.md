@@ -26,24 +26,27 @@ At scale, worker nodes will inevitably crash or time out during processing.
 Enforce idempotent job processing and at-least-once delivery.
 
 **Implementation:**  
-The pipeline status for each paper is tracked in the database (`processing`, `failed`, `complete`). If a worker crashes, the queue lease expires, and another worker retries the job. Crucially, specific stages (Ingestion, Extraction) check for existing artifacts before running, allowing the pipeline to “resume” rather than blindly restart.
+The pipeline status for each paper is tracked in the database (`processing`, `failed`, `complete`). If a worker crashes, the queue lease expires, and another worker retries the job. Crucially, specific stages (Ingestion, Extraction) check for existing artifacts before running, allowing the pipeline to "resume" rather than blindly restart.
 
 ### Incremental Embeddings & Caching via pgvector
 
-**Current:**  
-Re-embeds candidates on every run to compute similarity.
+**Status: ✅ Implemented**
 
-**Future:**  
-Store embeddings permanently to speed up the Semantic Gating phase.
+Paper and entity embeddings are now stored permanently in PostgreSQL using pgvector:
+- Paper embeddings stored in `papers.embedding` (3072 dimensions)
+- Entity embeddings stored in `nodes.embedding_raw` (3072 dims) and `nodes.embedding_index` (768 dims with HNSW index)
+- Semantic gating checks database first, only computes missing embeddings
+- Similarity search via `find_similar_papers()` and `find_similar_nodes()` RPC functions
 
-**Rationale:**  
-We utilize pgvector (within the existing Postgres DB) rather than a separate vector store. This choice colocates semantic search with transactional graph data, simplifying consistency guarantees and reducing infrastructure sprawl.
+This dramatically reduces API calls and latency during corpus selection and entity resolution.
 
 ---
 
 ## Phase 2: User Interface & Visualization (Months 3–6)
 
-**Objective:** Formalize and extend the internal visualization used for debugging and data model validation into a researcher-facing interface for exploring the entity-first knowledge graph, while preserving the system’s explainability and trust guarantees.
+**Note:** A lightweight visualization exists as internal tooling (see below), but a production-ready UI is still future work.
+
+**Objective:** Formalize and extend the internal visualization used for debugging and data model validation into a researcher-facing interface for exploring the entity-first knowledge graph, while preserving the system's explainability and trust guarantees.
 
 ### Entity-First Visualization Architecture
 
@@ -54,7 +57,7 @@ A lightweight, read-only graph visualization exists as internal tooling (React +
 Harden this tooling into a production-ready UI centered on **entities as the primary graph objects**:
 
 - **Primary Nodes:** Concepts, Methods, Datasets, Metrics (visually distinguished by type).
-- **Papers as Provenance:** Papers are surfaced contextually to explain *why* an edge exists (evidence excerpt, section type, confidence), and may optionally be rendered as “context nodes” in a dedicated mode for tracing attribution without letting paper nodes dominate the main graph.
+- **Papers as Provenance:** Papers are surfaced contextually to explain *why* an edge exists (evidence excerpt, section type, confidence), and may optionally be rendered as "context nodes" in a dedicated mode for tracing attribution without letting paper nodes dominate the main graph.
 - **Structural Encoding:** Node emphasis encodes graph-derived signals (e.g., degree centrality or influence), surfacing important methods and concepts without relying on citation counts.
 
 ### Explainable Interaction Layer
@@ -81,21 +84,29 @@ Harden this tooling into a production-ready UI centered on **entities as the pri
 
 ## Phase 3: Advanced Intelligence (Months 6+)
 
+**Note:** Basic semantic entity resolution is implemented. Advanced features below are still future work.
+
 **Objective:** Deepen the semantic capabilities of the graph using human-in-the-loop workflows to ensure data integrity.
 
 ### Semantic Entity Resolution Service
 
-**Problem:**  
-“NeRF” and “Neural Radiance Fields” exist as separate nodes.
+**Status: ✅ Implemented**
 
-**Solution:**  
-A background job identifies clusters of semantically identical nodes using embedding similarity and flags them for review.
+The system now includes a two-tier entity resolution system:
 
-**Guardrails:**  
+**Current Implementation:**
+- **Tier A**: Exact canonical name matching (deterministic)
+- **Tier B**: Embedding-based similarity search with strict auto-approval rules
+- Link-based canonicalization via `entity_links` table (reversible, non-destructive)
+- Query-time resolution via `nodes_resolved` and `edges_resolved` views
+- Dual embeddings (raw 3072-dim for precision, index 768-dim for fast search)
+- Batch deduplication script (`scripts/semantic_deduplicate_entities.ts`) for backfilling existing entities
+- API endpoints for reviewing and managing entity links (`/api/entity-links/*`)
 
-- Merges are not destructive. They are implemented as reversible “redirects” or “alias links.”
-- Original node IDs are preserved to maintain historical edge provenance.
-- If a human reviewer approves a bad merge, it can be seamlessly undone without data loss.
+**Future Enhancements:**
+- Machine learning from manual review decisions to improve auto-approval thresholds
+- Multi-tenant threshold configuration per entity type
+- Advanced cycle detection and resolution for complex alias chains
 
 ### Trend Analysis & Gap Detection
 
@@ -107,4 +118,4 @@ Programmatic analysis of graph structure to surface research opportunities.
 - **Hotspots:** Concepts with a velocity of new `uses` edges exceeding 2 standard deviations (  
   ) of the baseline.
 - **Coldspots:** Methods that are highly cited but have zero `improves_on` edges (indicating saturation or plateau).
-- **Anomalies:** Papers claiming “State-of-the-Art” in abstract but lacking `evaluates → Dataset` edges in the graph structure.
+- **Anomalies:** Papers claiming "State-of-the-Art" in abstract but lacking `evaluates → Dataset` edges in the graph structure.

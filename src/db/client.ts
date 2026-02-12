@@ -1,7 +1,54 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+// Tenant-related interfaces
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantUser {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  role: 'owner' | 'member' | 'viewer';
+  created_at: string;
+}
+
+export interface TenantSettings {
+  tenant_id: string;
+  default_model_choices: Record<string, unknown>;
+  max_papers_per_run: number | null;
+  max_reasoning_depth: number;
+  semantic_gating_threshold: number;
+  allow_speculative_edges: boolean;
+  enabled_relationship_types: string[];
+  execution_mode: 'hosted' | 'byo_key';
+  api_key_encrypted: string | null;
+  monthly_cost_limit?: number | null;
+  monthly_token_limit?: number | null;
+  daily_cost_limit?: number | null;
+  daily_token_limit?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineJob {
+  id: string;
+  tenant_id: string;
+  paper_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Node {
   id: number;
+  tenant_id: string;
   type: string;
   canonical_name: string;
   metadata: Record<string, unknown> | null;
@@ -9,11 +56,14 @@ export interface Node {
   adjusted_confidence: number | null;
   review_status: 'approved' | 'flagged' | 'rejected' | null;
   review_reasons: string | null;
+  embedding_raw: number[] | null;
+  embedding_index: number[] | null;
   created_at: string;
 }
 
 export interface Edge {
   id: number;
+  tenant_id: string;
   source_node_id: number;
   target_node_id: number;
   relationship_type: string;
@@ -27,15 +77,18 @@ export interface Edge {
 
 export interface Paper {
   paper_id: string;
+  tenant_id: string;
   title: string | null;
   abstract: string | null;
   year: number | null;
   metadata: Record<string, unknown> | null;
+  embedding: number[] | null;
   created_at: string;
 }
 
 export interface PaperSection {
   id: number;
+  tenant_id: string;
   paper_id: string;
   section_type: string;
   content: string;
@@ -46,6 +99,7 @@ export interface PaperSection {
 
 export interface EntityMention {
   id: number;
+  tenant_id: string;
   node_id: number;
   paper_id: string;
   section_type: string | null;
@@ -55,6 +109,7 @@ export interface EntityMention {
 
 export interface InferredInsight {
   id: number;
+  tenant_id: string;
   insight_type: string;
   subject_nodes: number[];
   reasoning_path: Record<string, unknown> | null;
@@ -67,6 +122,46 @@ export interface NodeTypeRegistry {
   description: string | null;
 }
 
+export interface EntityLink {
+  id: number;
+  node_id: number;
+  canonical_node_id: number;
+  link_type: 'alias_of' | 'same_as_candidate';
+  confidence: number;
+  status: 'proposed' | 'approved' | 'rejected';
+  evidence: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  tenant_id: string;
+}
+
+export interface InsertEntityLink {
+  node_id: number;
+  canonical_node_id: number;
+  link_type: 'alias_of' | 'same_as_candidate';
+  confidence: number;
+  status: 'proposed' | 'approved' | 'rejected';
+  evidence?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
+export interface EntityAlias {
+  id: number;
+  node_id: number;
+  alias_name: string;
+  source_paper_id: string | null;
+  tenant_id: string;
+  created_at: string;
+}
+
+export interface InsertEntityAlias {
+  node_id: number;
+  alias_name: string;
+  source_paper_id?: string;
+}
+
 export interface InsertNode {
   type: string;
   canonical_name: string;
@@ -75,6 +170,8 @@ export interface InsertNode {
   adjusted_confidence?: number;
   review_status?: 'approved' | 'flagged' | 'rejected';
   review_reasons?: string;
+  embedding_raw?: number[];
+  embedding_index?: number[];
 }
 
 export interface InsertEdge {
@@ -94,6 +191,7 @@ export interface InsertPaper {
   abstract?: string;
   year?: number;
   metadata?: Record<string, unknown>;
+  embedding?: number[];
 }
 
 export interface InsertPaperSection {
@@ -120,15 +218,17 @@ export interface InsertInferredInsight {
 
 export class DatabaseClient {
   public client: SupabaseClient;
+  public tenantId: string;
 
-  constructor(url: string, serviceRoleKey: string) {
+  constructor(url: string, serviceRoleKey: string, tenantId: string) {
     this.client = createClient(url, serviceRoleKey);
+    this.tenantId = tenantId;
   }
 
   async insertPaper(paper: InsertPaper): Promise<Paper> {
     const { data, error } = await this.client
       .from('papers')
-      .insert(paper)
+      .insert({ ...paper, tenant_id: this.tenantId })
       .select()
       .single();
 
@@ -142,7 +242,7 @@ export class DatabaseClient {
   async upsertPaper(paper: InsertPaper): Promise<Paper> {
     const { data, error } = await this.client
       .from('papers')
-      .upsert(paper, { onConflict: 'paper_id' })
+      .upsert({ ...paper, tenant_id: this.tenantId }, { onConflict: 'paper_id' })
       .select()
       .single();
 
@@ -159,6 +259,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('papers')
       .select('paper_id')
+      .eq('tenant_id', this.tenantId)
       .in('paper_id', paperIds);
 
     if (error) {
@@ -172,6 +273,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('papers')
       .select('paper_id')
+      .eq('tenant_id', this.tenantId)
       .eq('paper_id', paperId)
       .maybeSingle();
 
@@ -182,14 +284,89 @@ export class DatabaseClient {
     return data !== null;
   }
 
+  async upsertPaperEmbedding(paperId: string, embedding: number[]): Promise<void> {
+    const { error } = await this.client
+      .from('papers')
+      .update({ embedding })
+      .eq('paper_id', paperId)
+      .eq('tenant_id', this.tenantId);
+
+    if (error) {
+      throw new Error(`Failed to upsert embedding: ${error.message}`);
+    }
+  }
+
+  async getPaperEmbedding(paperId: string): Promise<number[] | null> {
+    const { data, error } = await this.client
+      .from('papers')
+      .select('embedding')
+      .eq('paper_id', paperId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // Not found
+      throw new Error(`Failed to get embedding: ${error.message}`);
+    }
+
+    if (!data?.embedding) return null;
+
+    // Supabase returns vector as string "[1,2,3,...]" or as array
+    // Handle both cases
+    const embedding = data.embedding;
+    if (typeof embedding === 'string') {
+      // Parse string format "[1,2,3,...]"
+      return JSON.parse(embedding) as number[];
+    }
+    if (Array.isArray(embedding)) {
+      return embedding;
+    }
+    
+    return null;
+  }
+
+  async findSimilarPapers(params: {
+    queryEmbedding: number[];
+    limit?: number;
+    similarityThreshold?: number;
+    excludePaperIds?: string[];
+  }): Promise<Array<{ paper_id: string; similarity: number }>> {
+    const {
+      queryEmbedding,
+      limit = 100,
+      similarityThreshold = 0,
+      excludePaperIds = [],
+    } = params;
+
+    // Use RPC function for vector similarity search
+    // PostgREST/Supabase expects vector as array for RPC calls
+    const { data, error } = await this.client.rpc('find_similar_papers', {
+      query_embedding: queryEmbedding,
+      similarity_threshold: similarityThreshold,
+      result_limit: limit,
+      exclude_ids: excludePaperIds,
+      tenant_id_param: this.tenantId,
+    });
+
+    if (error) {
+      throw new Error(`Failed to find similar papers: ${error.message}`);
+    }
+
+    return (data || []).map((row: any) => ({
+      paper_id: row.paper_id,
+      similarity: row.similarity,
+    }));
+  }
+
   async insertPaperSections(sections: InsertPaperSection[]): Promise<PaperSection[]> {
     if (sections.length === 0) {
       return [];
     }
 
+    const sectionsWithTenant = sections.map(s => ({ ...s, tenant_id: this.tenantId }));
     const { data, error } = await this.client
       .from('paper_sections')
-      .insert(sections)
+      .insert(sectionsWithTenant)
       .select();
 
     if (error) {
@@ -202,7 +379,7 @@ export class DatabaseClient {
   async insertNode(node: InsertNode): Promise<Node> {
     const { data, error } = await this.client
       .from('nodes')
-      .insert(node)
+      .insert({ ...node, tenant_id: this.tenantId })
       .select()
       .single();
 
@@ -218,9 +395,10 @@ export class DatabaseClient {
       return [];
     }
 
+    const nodesWithTenant = nodes.map(n => ({ ...n, tenant_id: this.tenantId }));
     const { data, error } = await this.client
       .from('nodes')
-      .insert(nodes)
+      .insert(nodesWithTenant)
       .select();
 
     if (error) {
@@ -233,7 +411,7 @@ export class DatabaseClient {
   async insertEdge(edge: InsertEdge): Promise<Edge> {
     const { data, error } = await this.client
       .from('edges')
-      .insert(edge)
+      .insert({ ...edge, tenant_id: this.tenantId })
       .select()
       .single();
 
@@ -249,9 +427,10 @@ export class DatabaseClient {
       return [];
     }
 
+    const edgesWithTenant = edges.map(e => ({ ...e, tenant_id: this.tenantId }));
     const { data, error } = await this.client
       .from('edges')
-      .insert(edges)
+      .insert(edgesWithTenant)
       .select();
 
     if (error) {
@@ -272,7 +451,8 @@ export class DatabaseClient {
         evidence: evidence.slice(0, 300),
         provenance,
       })
-      .eq('id', edgeId);
+      .eq('id', edgeId)
+      .eq('tenant_id', this.tenantId);
 
     if (error) {
       throw new Error(`Failed to update edge evidence: ${error.message}`);
@@ -288,7 +468,8 @@ export class DatabaseClient {
       .update({
         provenance,
       })
-      .eq('id', edgeId);
+      .eq('id', edgeId)
+      .eq('tenant_id', this.tenantId);
 
     if (error) {
       throw new Error(`Failed to update edge provenance: ${error.message}`);
@@ -330,14 +511,199 @@ export class DatabaseClient {
     );
   }
 
+  // Entity Links methods
+  async insertEntityLink(link: InsertEntityLink): Promise<EntityLink> {
+    const { data, error } = await this.client
+      .from('entity_links')
+      .insert({ ...link, tenant_id: this.tenantId })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to insert entity link: ${error.message}`);
+    }
+
+    return data as EntityLink;
+  }
+
+  async getEntityLinks(params: {
+    nodeId?: number;
+    canonicalNodeId?: number;
+    status?: 'proposed' | 'approved' | 'rejected';
+    linkType?: 'alias_of' | 'same_as_candidate';
+  }): Promise<EntityLink[]> {
+    let query = this.client
+      .from('entity_links')
+      .select('*')
+      .eq('tenant_id', this.tenantId);
+
+    if (params.nodeId) {
+      query = query.eq('node_id', params.nodeId);
+    }
+    if (params.canonicalNodeId) {
+      query = query.eq('canonical_node_id', params.canonicalNodeId);
+    }
+    if (params.status) {
+      query = query.eq('status', params.status);
+    }
+    if (params.linkType) {
+      query = query.eq('link_type', params.linkType);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to get entity links: ${error.message}`);
+    }
+
+    return (data || []) as EntityLink[];
+  }
+
+  async getApprovedAliasTargetsForNodes(nodeIds: number[]): Promise<Map<number, number>> {
+    if (nodeIds.length === 0) {
+      return new Map();
+    }
+
+    const { data, error } = await this.client
+      .from('entity_links')
+      .select('node_id, canonical_node_id')
+      .eq('tenant_id', this.tenantId)
+      .eq('status', 'approved')
+      .eq('link_type', 'alias_of')
+      .in('node_id', nodeIds);
+
+    if (error) {
+      throw new Error(`Failed to get approved alias targets: ${error.message}`);
+    }
+
+    const aliasTargets = new Map<number, number>();
+    for (const row of data || []) {
+      const nodeId = (row as any).node_id as number;
+      const canonicalNodeId = (row as any).canonical_node_id as number;
+      if (!aliasTargets.has(nodeId)) {
+        aliasTargets.set(nodeId, canonicalNodeId);
+      }
+    }
+
+    return aliasTargets;
+  }
+
+  async updateEntityLinkStatus(
+    linkId: number,
+    status: 'approved' | 'rejected',
+    reviewedBy?: string
+  ): Promise<EntityLink> {
+    const { data, error } = await this.client
+      .from('entity_links')
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewedBy,
+      })
+      .eq('id', linkId)
+      .eq('tenant_id', this.tenantId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update entity link status: ${error.message}`);
+    }
+
+    return data as EntityLink;
+  }
+
+  // Entity Aliases methods
+  async insertEntityAlias(alias: InsertEntityAlias): Promise<EntityAlias> {
+    const { data, error } = await this.client
+      .from('entity_aliases')
+      .insert({ ...alias, tenant_id: this.tenantId })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to insert entity alias: ${error.message}`);
+    }
+
+    return data as EntityAlias;
+  }
+
+  async getEntityAliases(nodeId: number): Promise<EntityAlias[]> {
+    const { data, error } = await this.client
+      .from('entity_aliases')
+      .select('*')
+      .eq('node_id', nodeId)
+      .eq('tenant_id', this.tenantId);
+
+    if (error) {
+      throw new Error(`Failed to get entity aliases: ${error.message}`);
+    }
+
+    return (data || []) as EntityAlias[];
+  }
+
+  async findSimilarNodes(params: {
+    queryEmbeddingIndex: number[];
+    entityType: string;
+    limit?: number;
+    similarityThreshold?: number;
+    excludeNodeIds?: number[];
+  }): Promise<Array<{ node_id: number; similarity: number }>> {
+    const {
+      queryEmbeddingIndex,
+      entityType,
+      limit = 50,
+      similarityThreshold = 0.85,
+      excludeNodeIds = [],
+    } = params;
+
+    // Use RPC function for vector similarity search
+    const { data, error } = await this.client.rpc('find_similar_nodes', {
+      query_embedding_index: queryEmbeddingIndex,
+      entity_type: entityType,
+      similarity_threshold: similarityThreshold,
+      result_limit: limit,
+      exclude_ids: excludeNodeIds,
+      tenant_id_param: this.tenantId,
+    });
+
+    if (error) {
+      throw new Error(`Failed to find similar nodes: ${error.message}`);
+    }
+
+    return (data || []).map((row: any) => ({
+      node_id: row.node_id,
+      similarity: row.similarity,
+    }));
+  }
+
+  async upsertNodeEmbeddings(
+    nodeId: number,
+    embeddingRaw: number[],
+    embeddingIndex: number[]
+  ): Promise<void> {
+    const { error } = await this.client
+      .from('nodes')
+      .update({
+        embedding_raw: embeddingRaw,
+        embedding_index: embeddingIndex,
+      })
+      .eq('id', nodeId)
+      .eq('tenant_id', this.tenantId);
+
+    if (error) {
+      throw new Error(`Failed to upsert node embeddings: ${error.message}`);
+    }
+  }
+
   async insertEntityMentions(mentions: InsertEntityMention[]): Promise<EntityMention[]> {
     if (mentions.length === 0) {
       return [];
     }
 
+    const mentionsWithTenant = mentions.map(m => ({ ...m, tenant_id: this.tenantId }));
     const { data, error } = await this.client
       .from('entity_mentions')
-      .insert(mentions)
+      .insert(mentionsWithTenant)
       .select();
 
     if (error) {
@@ -352,9 +718,10 @@ export class DatabaseClient {
       return [];
     }
 
+    const insightsWithTenant = insights.map(i => ({ ...i, tenant_id: this.tenantId }));
     const { data, error } = await this.client
       .from('inferred_insights')
-      .insert(insights)
+      .insert(insightsWithTenant)
       .select();
 
     if (error) {
@@ -375,6 +742,7 @@ export class DatabaseClient {
       .from('edges')
       .select('*')
       .eq('id', edgeId)
+      .eq('tenant_id', this.tenantId)
       .maybeSingle();
 
     if (error) {
@@ -390,13 +758,13 @@ export class DatabaseClient {
     const targetPaperId = meta.target_paper_id as string | undefined;
 
     const [sourceNode, targetNode, sourcePaper, targetPaper] = await Promise.all([
-      this.client.from('nodes').select('*').eq('id', edge.source_node_id).maybeSingle(),
-      this.client.from('nodes').select('*').eq('id', edge.target_node_id).maybeSingle(),
+      this.client.from('nodes').select('*').eq('id', edge.source_node_id).eq('tenant_id', this.tenantId).maybeSingle(),
+      this.client.from('nodes').select('*').eq('id', edge.target_node_id).eq('tenant_id', this.tenantId).maybeSingle(),
       sourcePaperId
-        ? this.client.from('papers').select('*').eq('paper_id', sourcePaperId).maybeSingle()
+        ? this.client.from('papers').select('*').eq('paper_id', sourcePaperId).eq('tenant_id', this.tenantId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       targetPaperId
-        ? this.client.from('papers').select('*').eq('paper_id', targetPaperId).maybeSingle()
+        ? this.client.from('papers').select('*').eq('paper_id', targetPaperId).eq('tenant_id', this.tenantId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
     ]);
 
@@ -426,6 +794,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('inferred_insights')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .overlaps('subject_nodes', nodeIds);
 
     if (error) {
@@ -442,7 +811,8 @@ export class DatabaseClient {
         node_id,
         nodes (*)
       `)
-      .eq('paper_id', paperId);
+      .eq('paper_id', paperId)
+      .eq('tenant_id', this.tenantId);
 
     const { data, error } = await query;
 
@@ -482,6 +852,7 @@ export class DatabaseClient {
     let query = this.client
       .from('edges')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .or(`source_node_id.in.(${nodeIds.join(',')}),target_node_id.in.(${nodeIds.join(',')})`);
 
     // Filter by review_status if specified
@@ -502,8 +873,8 @@ export class DatabaseClient {
     // Return ONLY approved nodes and edges for main graph endpoint
     // Exclude Paper nodes - papers are not part of the graph visualization
     const [nodesResult, edgesResult] = await Promise.all([
-      this.client.from('nodes').select('*').eq('review_status', 'approved').neq('type', 'Paper'),
-      this.client.from('edges').select('*').eq('review_status', 'approved'),
+      this.client.from('nodes').select('*').eq('tenant_id', this.tenantId).eq('review_status', 'approved').neq('type', 'Paper'),
+      this.client.from('edges').select('*').eq('tenant_id', this.tenantId).eq('review_status', 'approved'),
     ]);
 
     if (nodesResult.error) {
@@ -525,8 +896,8 @@ export class DatabaseClient {
     // Exclude Paper nodes - papers are not part of the graph visualization
     // Use .in() to explicitly match flagged or rejected status
     const [nodesResult, edgesResult] = await Promise.all([
-      this.client.from('nodes').select('*').in('review_status', ['flagged', 'rejected']).neq('type', 'Paper'),
-      this.client.from('edges').select('*').in('review_status', ['flagged', 'rejected']),
+      this.client.from('nodes').select('*').eq('tenant_id', this.tenantId).in('review_status', ['flagged', 'rejected']).neq('type', 'Paper'),
+      this.client.from('edges').select('*').eq('tenant_id', this.tenantId).in('review_status', ['flagged', 'rejected']),
     ]);
 
     if (nodesResult.error) {
@@ -546,8 +917,8 @@ export class DatabaseClient {
   async getAllGraphData(): Promise<{ nodes: Node[]; edges: Edge[] }> {
     // Return ALL nodes and edges regardless of review_status (for rescoring)
     const [nodesResult, edgesResult] = await Promise.all([
-      this.client.from('nodes').select('*'),
-      this.client.from('edges').select('*'),
+      this.client.from('nodes').select('*').eq('tenant_id', this.tenantId),
+      this.client.from('edges').select('*').eq('tenant_id', this.tenantId),
     ]);
 
     if (nodesResult.error) {
@@ -582,7 +953,8 @@ export class DatabaseClient {
     const { error } = await this.client
       .from('nodes')
       .update(updateData)
-      .eq('id', nodeId);
+      .eq('id', nodeId)
+      .eq('tenant_id', this.tenantId);
 
     if (error) {
       throw new Error(`Failed to update node review status: ${error.message}`);
@@ -619,7 +991,8 @@ export class DatabaseClient {
         review_status: reviewStatus,
         review_reasons: reviewReasons || null,
       })
-      .eq('id', edgeId);
+      .eq('id', edgeId)
+      .eq('tenant_id', this.tenantId);
 
     if (error) {
       throw new Error(`Failed to update edge review status: ${error.message}`);
@@ -651,6 +1024,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('nodes')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('canonical_name', canonicalName)
       .eq('type', type)
       .limit(1)
@@ -681,6 +1055,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('nodes')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .or(orCondition);
 
     if (error) {
@@ -700,6 +1075,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('paper_sections')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('paper_id', paperId)
       .order('part_index', { ascending: true });
 
@@ -733,6 +1109,7 @@ export class DatabaseClient {
     let query = this.client
       .from('nodes')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('id', nodeId)
       .neq('type', 'Paper'); // Exclude Paper nodes from graph queries
 
@@ -761,6 +1138,7 @@ export class DatabaseClient {
     let query = this.client
       .from('edges')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .or(`source_node_id.eq.${nodeId},target_node_id.eq.${nodeId}`);
 
     // Filter by review_status if specified (default to approved for main graph)
@@ -789,9 +1167,10 @@ export class DatabaseClient {
       .from('entity_mentions')
       .select(`
         paper_id,
-        papers (*)
+        papers!inner (*)
       `)
-      .eq('node_id', nodeId);
+      .eq('node_id', nodeId)
+      .eq('tenant_id', this.tenantId);
 
     if (error) {
       throw new Error(`Failed to get papers for node: ${error.message}`);
@@ -861,6 +1240,23 @@ export class DatabaseClient {
   }
 
   /**
+   * Get all papers for export (up to maxLimit). No pagination.
+   */
+  async getPapersForExport(maxLimit = 10000): Promise<Paper[]> {
+    const { data, error } = await this.client
+      .from('papers')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(maxLimit);
+
+    if (error) {
+      throw new Error(`Failed to get papers for export: ${error.message}`);
+    }
+    return (data || []) as Paper[];
+  }
+
+  /**
    * Get all papers with pagination - for API use
    */
   async getAllPapers(params: {
@@ -874,6 +1270,7 @@ export class DatabaseClient {
     const { data, error, count } = await this.client
       .from('papers')
       .select('*', { count: 'exact' })
+      .eq('tenant_id', this.tenantId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -901,6 +1298,7 @@ export class DatabaseClient {
     const { data, error, count } = await this.client
       .from('edges')
       .select('*', { count: 'exact' })
+      .eq('tenant_id', this.tenantId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -920,14 +1318,31 @@ export class DatabaseClient {
   async getAllInsights(params: {
     page?: number;
     limit?: number;
+    query?: string;
+    insightType?: string;
   }): Promise<{ data: InferredInsight[]; count: number }> {
     const page = params.page || 1;
     const limit = Math.min(params.limit || 50, 100);
     const offset = (page - 1) * limit;
 
-    const { data, error, count } = await this.client
+    let query = this.client
       .from('inferred_insights')
       .select('*', { count: 'exact' })
+      .eq('tenant_id', this.tenantId);
+
+    // Apply explicit type filter if provided (takes precedence over query)
+    if (params.insightType) {
+      query = query.eq('insight_type', params.insightType);
+    } else if (params.query) {
+      // Only apply query filter if no explicit type is provided
+      // (since query also searches insight_type, they would conflict)
+      const searchQuery = params.query.trim();
+      const searchPattern = `%${searchQuery}%`;
+      // Search in insight_type (case-insensitive partial match)
+      query = query.ilike('insight_type', searchPattern);
+    }
+
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -948,6 +1363,7 @@ export class DatabaseClient {
     const { data, error } = await this.client
       .from('inferred_insights')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('id', insightId)
       .maybeSingle();
 
@@ -958,9 +1374,177 @@ export class DatabaseClient {
 
     return data as InferredInsight | null;
   }
+
+  /**
+   * Get tenant settings
+   */
+  async getTenantSettings(): Promise<TenantSettings | null> {
+    const { data, error } = await this.client
+      .from('tenant_settings')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to get tenant settings: ${error.message}`);
+    }
+
+    return data as TenantSettings | null;
+  }
+
+  /**
+   * Update tenant settings
+   */
+  async updateTenantSettings(settings: Partial<Omit<TenantSettings, 'tenant_id' | 'created_at'>>): Promise<void> {
+    const { error } = await this.client
+      .from('tenant_settings')
+      .update({
+        ...settings,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', this.tenantId);
+
+    if (error) {
+      throw new Error(`Failed to update tenant settings: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create a pipeline job (tenant-scoped)
+   */
+  async createPipelineJob(params: {
+    paper_id: string;
+    status: PipelineJob['status'];
+  }): Promise<PipelineJob> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .insert({
+        tenant_id: this.tenantId,
+        paper_id: params.paper_id,
+        status: params.status,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create pipeline job: ${error.message}`);
+    }
+
+    return data as PipelineJob;
+  }
+
+  /**
+   * Update a pipeline job (tenant-scoped)
+   */
+  async updatePipelineJob(
+    jobId: string,
+    updates: Partial<Pick<PipelineJob, 'status' | 'result' | 'error'>>
+  ): Promise<PipelineJob> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', this.tenantId)
+      .eq('id', jobId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update pipeline job: ${error.message}`);
+    }
+
+    return data as PipelineJob;
+  }
+
+  /**
+   * Get a pipeline job by ID (tenant-scoped)
+   */
+  async getPipelineJob(jobId: string): Promise<PipelineJob | null> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to get pipeline job: ${error.message}`);
+    }
+
+    return (data || null) as PipelineJob | null;
+  }
+
+  /**
+   * List pipeline jobs (tenant-scoped)
+   */
+  async listPipelineJobs(params?: {
+    page?: number;
+    limit?: number;
+    status?: PipelineJob['status'];
+  }): Promise<{ data: PipelineJob[]; count: number }> {
+    const page = params?.page ?? 1;
+    const limit = Math.min(params?.limit ?? 20, 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = this.client
+      .from('pipeline_jobs')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', this.tenantId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (params?.status) {
+      query = query.eq('status', params.status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Failed to list pipeline jobs: ${error.message}`);
+    }
+
+    return {
+      data: (data || []) as PipelineJob[],
+      count: count || 0,
+    };
+  }
+
+  async countPipelineJobsSince(windowMs: number): Promise<number> {
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+    const { count, error } = await this.client
+      .from('pipeline_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', this.tenantId)
+      .gte('created_at', windowStart);
+
+    if (error) {
+      throw new Error(`Failed to count recent pipeline jobs: ${error.message}`);
+    }
+
+    return count || 0;
+  }
+
+  /**
+   * Get tenant members
+   */
+  async getTenantMembers(): Promise<TenantUser[]> {
+    const { data, error } = await this.client
+      .from('tenant_users')
+      .select('*')
+      .eq('tenant_id', this.tenantId);
+
+    if (error) {
+      throw new Error(`Failed to get tenant members: ${error.message}`);
+    }
+
+    return (data || []) as TenantUser[];
+  }
 }
 
-export function createDatabaseClient(): DatabaseClient {
+export function createDatabaseClient(tenantId: string): DatabaseClient {
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -970,6 +1554,9 @@ export function createDatabaseClient(): DatabaseClient {
     );
   }
 
-  return new DatabaseClient(url, serviceRoleKey);
-}
+  if (!tenantId) {
+    throw new Error('Tenant ID is required');
+  }
 
+  return new DatabaseClient(url, serviceRoleKey, tenantId);
+}

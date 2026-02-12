@@ -8,17 +8,47 @@ interface SearchModalProps {
     onClose: () => void;
 }
 
+type SearchMode = 'text' | 'semantic';
+
 export function SearchModal({ onClose }: SearchModalProps) {
     const [query, setQuery] = useState('');
-    const { selectEntity, getEntityTypeColor } = useGraphStore();
+    const [searchMode, setSearchMode] = useState<SearchMode>('text');
+    const { selectEntity, getEntityTypeColor, graphData } = useGraphStore();
 
-    // Search query with debounce
-    const { data: searchResults, isLoading } = useQuery({
-        queryKey: ['search', query],
+    // Build a map from paper_id to entity id for navigation
+    const paperIdToEntityId = new Map<string, number>();
+    graphData?.nodes.forEach(node => {
+        if (node.type.toLowerCase() === 'paper') {
+            paperIdToEntityId.set(node.canonical_name, node.id);
+        }
+    });
+
+    // Text search query
+    const {
+        data: textResults,
+        isLoading: isTextLoading
+    } = useQuery({
+        queryKey: ['search', 'text', query],
         queryFn: () => apiClient.search(query),
-        enabled: query.length >= 2,
+        enabled: searchMode === 'text' && query.length >= 2,
         staleTime: 30 * 1000,
     });
+
+    // Semantic search query
+    const {
+        data: semanticResults,
+        isLoading: isSemanticLoading,
+        isError: isSemanticError,
+        error: semanticError,
+    } = useQuery({
+        queryKey: ['search', 'semantic', query],
+        queryFn: () => apiClient.semanticSearch(query, 20, 0.3),
+        enabled: searchMode === 'semantic' && query.length >= 3,
+        staleTime: 60 * 1000, // Cache semantic results longer
+        retry: 1, // Only retry once for semantic (API call is expensive)
+    });
+
+    const isLoading = searchMode === 'text' ? isTextLoading : isSemanticLoading;
 
     // Close on escape
     useEffect(() => {
@@ -40,7 +70,18 @@ export function SearchModal({ onClose }: SearchModalProps) {
         onClose();
     }, [selectEntity, onClose]);
 
-    const hasResults = searchResults && (searchResults.nodes.length > 0 || searchResults.papers.length > 0);
+    // Handle paper click (for semantic results that might not be entities)
+    const handlePaperClick = useCallback((paperId: string) => {
+        const entityId = paperIdToEntityId.get(paperId);
+        if (entityId) {
+            selectEntity(entityId);
+            onClose();
+        }
+    }, [paperIdToEntityId, selectEntity, onClose]);
+
+    const hasTextResults = textResults && (textResults.nodes.length > 0 || textResults.papers.length > 0);
+    const hasSemanticResults = semanticResults && semanticResults.papers.length > 0;
+    const minChars = searchMode === 'semantic' ? 3 : 2;
 
     return (
         <div className={styles.modalOverlay} onClick={handleBackdropClick}>
@@ -53,12 +94,15 @@ export function SearchModal({ onClose }: SearchModalProps) {
                     <input
                         type="text"
                         className={styles.searchInput}
-                        placeholder="Search entities, papers..."
+                        placeholder={searchMode === 'semantic'
+                            ? "Describe what you're looking for..."
+                            : "Search entities, papers..."
+                        }
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         autoFocus
                     />
-                    <button className={styles.closeBtn} onClick={onClose}>
+                    <button className={styles.closeBtn} onClick={onClose} aria-label="Close search">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <line x1="18" y1="6" x2="6" y2="18" />
                             <line x1="6" y1="6" x2="18" y2="18" />
@@ -66,24 +110,57 @@ export function SearchModal({ onClose }: SearchModalProps) {
                     </button>
                 </div>
 
+                {/* Search Mode Toggle */}
+                <div className={styles.searchModeToggle}>
+                    <button
+                        className={`${styles.searchModeBtn} ${searchMode === 'text' ? styles.active : ''}`}
+                        onClick={() => setSearchMode('text')}
+                        aria-pressed={searchMode === 'text'}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                        </svg>
+                        Text Search
+                    </button>
+                    <button
+                        className={`${styles.searchModeBtn} ${searchMode === 'semantic' ? styles.active : ''}`}
+                        onClick={() => setSearchMode('semantic')}
+                        aria-pressed={searchMode === 'semantic'}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 16v-4M12 8h.01" />
+                        </svg>
+                        Semantic Search
+                    </button>
+                </div>
+
                 <div className={styles.searchResults}>
-                    {query.length < 2 ? (
+                    {query.length < minChars ? (
                         <div className={styles.searchHint}>
-                            Type at least 2 characters to search...
+                            {searchMode === 'semantic'
+                                ? "Type at least 3 characters for semantic search..."
+                                : "Type at least 2 characters to search..."
+                            }
                         </div>
                     ) : isLoading ? (
                         <div className={styles.loadingState}>
                             <div className={styles.loadingSpinner} />
-                            <span className={styles.loadingText}>Searching...</span>
+                            <span className={styles.loadingText}>
+                                {searchMode === 'semantic' ? 'Finding similar papers...' : 'Searching...'}
+                            </span>
                         </div>
-                    ) : hasResults ? (
+                    ) : searchMode === 'text' && hasTextResults ? (
                         <>
-                            {searchResults.nodes.length > 0 && (
+                            {textResults.nodes.length > 0 && (
                                 <div className={styles.resultSection}>
                                     <h3 className={styles.resultSectionTitle}>
-                                        Entities ({searchResults.nodes.length})
+                                        Entities ({textResults.nodes.length})
                                     </h3>
-                                    {searchResults.nodes.slice(0, 10).map(node => {
+                                    {textResults.nodes.slice(0, 10).map(node => {
                                         const color = getEntityTypeColor(node.type);
                                         const isPaper = node.type.toLowerCase() === 'paper';
                                         const displayName = (isPaper && node.metadata?.title)
@@ -106,20 +183,20 @@ export function SearchModal({ onClose }: SearchModalProps) {
                                             </div>
                                         );
                                     })}
-                                    {searchResults.nodes.length > 10 && (
+                                    {textResults.nodes.length > 10 && (
                                         <div className={styles.moreResults}>
-                                            +{searchResults.nodes.length - 10} more results
+                                            +{textResults.nodes.length - 10} more results
                                         </div>
                                     )}
                                 </div>
                             )}
 
-                            {searchResults.papers.length > 0 && (
+                            {textResults.papers.length > 0 && (
                                 <div className={styles.resultSection}>
                                     <h3 className={styles.resultSectionTitle}>
-                                        Papers ({searchResults.papers.length})
+                                        Papers ({textResults.papers.length})
                                     </h3>
-                                    {searchResults.papers.slice(0, 5).map(paper => (
+                                    {textResults.papers.slice(0, 5).map(paper => (
                                         <div key={paper.paper_id} className={styles.resultItem}>
                                             <span className={styles.resultType} style={{ backgroundColor: '#8b5cf6' }}>
                                                 Paper
@@ -135,6 +212,48 @@ export function SearchModal({ onClose }: SearchModalProps) {
                                 </div>
                             )}
                         </>
+                    ) : searchMode === 'semantic' && isSemanticError ? (
+                        <div className={styles.emptyState}>
+                            <span className={styles.errorText}>
+                                {(semanticError as Error)?.message || 'Failed to perform semantic search'}
+                            </span>
+                        </div>
+                    ) : searchMode === 'semantic' && hasSemanticResults ? (
+                        <div className={styles.resultSection}>
+                            <h3 className={styles.resultSectionTitle}>
+                                Similar Papers ({semanticResults.count})
+                            </h3>
+                            {semanticResults.papers.map(({ paper, similarity }) => {
+                                const isInGraph = paperIdToEntityId.has(paper.paper_id);
+                                return (
+                                    <div
+                                        key={paper.paper_id}
+                                        className={`${styles.resultItem} ${isInGraph ? styles.clickable : styles.disabled}`}
+                                        onClick={() => isInGraph && handlePaperClick(paper.paper_id)}
+                                    >
+                                        <span className={styles.resultType} style={{ backgroundColor: '#8b5cf6' }}>
+                                            Paper
+                                        </span>
+                                        <div className={styles.resultContent}>
+                                            <span className={styles.resultName}>
+                                                {paper.title || paper.paper_id}
+                                            </span>
+                                            <div className={styles.resultDetails}>
+                                                {paper.year && (
+                                                    <span className={styles.resultMeta}>{paper.year}</span>
+                                                )}
+                                                <span className={styles.similarityScore}>
+                                                    {(similarity * 100).toFixed(0)}% match
+                                                </span>
+                                                {!isInGraph && (
+                                                    <span className={styles.notInGraph}>Not in graph</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     ) : (
                         <div className={styles.emptyState}>
                             No results found for "{query}"

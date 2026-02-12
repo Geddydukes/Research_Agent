@@ -56,8 +56,8 @@ class LaneLimiter {
     const running = this.running.get(lane) || 0;
 
     if (running < max) {
-      await this.waitForRateLimit(lane);
       this.running.set(lane, running + 1);
+      await this.waitForRateLimit(lane);
       try {
         return await fn();
       } finally {
@@ -68,8 +68,8 @@ class LaneLimiter {
 
     return new Promise<T>((resolve) => {
       this.queues.get(lane)!.push(async () => {
-        await this.waitForRateLimit(lane);
         this.running.set(lane, (this.running.get(lane) || 0) + 1);
+        await this.waitForRateLimit(lane);
         try {
           const result = await fn();
           resolve(result);
@@ -104,7 +104,7 @@ const globalLimiter = new LaneLimiter(globalLimiterConfig);
 
 let configLogged = false;
 
-if (!configLogged && typeof process !== 'undefined') {
+if (!configLogged && typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
   console.log('[Limiter] Concurrency limits:', globalLimiterConfig);
   configLogged = true;
 }

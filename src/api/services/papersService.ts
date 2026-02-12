@@ -37,6 +37,7 @@ export class PapersService {
       const { data, error } = await (this.db as any).client
         .from('papers')
         .select('*')
+        .eq('tenant_id', this.db.tenantId)
         .eq('paper_id', paperId)
         .maybeSingle();
 

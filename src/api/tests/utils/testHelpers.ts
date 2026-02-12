@@ -268,29 +268,35 @@ export async function createTestServer(
 
 export function createMockData() {
   const mockDb = new MockDatabaseClient();
+  const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
 
   // Create test papers
   const paper1: Paper = {
     paper_id: 'test-paper-1',
+    tenant_id: DEFAULT_TENANT_ID,
     title: 'Test Paper 1',
     abstract: 'This is a test paper',
     year: 2023,
     metadata: { authors: ['Author 1'] },
+    embedding: null,
     created_at: new Date().toISOString(),
   };
 
   const paper2: Paper = {
     paper_id: 'test-paper-2',
+    tenant_id: DEFAULT_TENANT_ID,
     title: 'Test Paper 2',
     abstract: 'Another test paper',
     year: 2024,
     metadata: { authors: ['Author 2'] },
+    embedding: null,
     created_at: new Date().toISOString(),
   };
 
   // Create test nodes
   const node1: Node = {
     id: 1,
+    tenant_id: DEFAULT_TENANT_ID,
     type: 'method',
     canonical_name: 'Test Method',
     metadata: { description: 'A test method' },
@@ -298,11 +304,14 @@ export function createMockData() {
     adjusted_confidence: 0.85,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 
   const node2: Node = {
     id: 2,
+    tenant_id: DEFAULT_TENANT_ID,
     type: 'dataset',
     canonical_name: 'Test Dataset',
     metadata: { description: 'A test dataset' },
@@ -310,11 +319,14 @@ export function createMockData() {
     adjusted_confidence: 0.75,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 
   const node3: Node = {
     id: 3,
+    tenant_id: DEFAULT_TENANT_ID,
     type: 'metric',
     canonical_name: 'Accuracy',
     metadata: { description: 'Accuracy metric' },
@@ -322,12 +334,15 @@ export function createMockData() {
     adjusted_confidence: 0.9,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 
   // Create test edges
   const edge1: Edge = {
     id: 1,
+    tenant_id: DEFAULT_TENANT_ID,
     source_node_id: 1,
     target_node_id: 2,
     relationship_type: 'uses',
@@ -341,6 +356,7 @@ export function createMockData() {
 
   const edge2: Edge = {
     id: 2,
+    tenant_id: DEFAULT_TENANT_ID,
     source_node_id: 1,
     target_node_id: 3,
     relationship_type: 'evaluates_with',
@@ -355,6 +371,7 @@ export function createMockData() {
   // Create test sections
   const section1: PaperSection = {
     id: 1,
+    tenant_id: DEFAULT_TENANT_ID,
     paper_id: 'test-paper-1',
     section_type: 'abstract',
     content: 'This is the abstract content',
@@ -366,6 +383,7 @@ export function createMockData() {
   // Create test insights
   const insight1: InferredInsight = {
     id: 1,
+    tenant_id: DEFAULT_TENANT_ID,
     insight_type: 'comparison',
     subject_nodes: [1, 2],
     reasoning_path: { steps: ['step1', 'step2'] },

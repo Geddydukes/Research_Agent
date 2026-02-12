@@ -10,12 +10,16 @@ export function FilterPanel() {
         activeEntityTypes,
         activeRelationshipTypes,
         hideUnconnectedNodes,
+        confidenceThreshold,
+        yearRange,
         clusterMode,
         toggleEntityType,
         toggleRelationshipType,
         setAllEntityTypes,
         setAllRelationshipTypes,
         toggleHideUnconnectedNodes,
+        setConfidenceThreshold,
+        setYearRange,
         setClusterMode,
         getEntityTypeColor,
         getRelationshipColor,
@@ -70,6 +74,7 @@ export function FilterPanel() {
                     <button
                         className={styles.selectAllBtn}
                         onClick={() => setAllEntityTypes(!allEntityTypesActive)}
+                        aria-label={allEntityTypesActive ? 'Deselect all entity types' : 'Select all entity types'}
                     >
                         {allEntityTypesActive ? 'Deselect All' : 'Select All'}
                     </button>
@@ -81,17 +86,19 @@ export function FilterPanel() {
                         const count = entityTypeCounts.get(type) || 0;
 
                         return (
-                            <div
+                            <button
                                 key={type}
                                 className={`${styles.filterItem} ${isActive ? styles.active : ''}`}
                                 style={{ '--filter-color': color } as React.CSSProperties}
                                 onClick={() => toggleEntityType(type as EntityType)}
+                                aria-pressed={isActive}
+                                aria-label={`${type} entities (${count})`}
                             >
-                                <div className={styles.filterCheckbox} />
-                                <div className={styles.filterColorDot} style={{ backgroundColor: color }} />
+                                <div className={styles.filterCheckbox} aria-hidden="true" />
+                                <div className={styles.filterColorDot} style={{ backgroundColor: color }} aria-hidden="true" />
                                 <span className={styles.filterLabel}>{type}</span>
                                 <span className={styles.filterCount}>{count}</span>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
@@ -106,6 +113,7 @@ export function FilterPanel() {
                     <button
                         className={styles.selectAllBtn}
                         onClick={() => setAllRelationshipTypes(!allRelationshipTypesActive)}
+                        aria-label={allRelationshipTypesActive ? 'Deselect all relationship types' : 'Select all relationship types'}
                     >
                         {allRelationshipTypesActive ? 'Deselect All' : 'Select All'}
                     </button>
@@ -117,17 +125,19 @@ export function FilterPanel() {
                         const count = relationshipTypeCounts.get(type) || 0;
 
                         return (
-                            <div
+                            <button
                                 key={type}
                                 className={`${styles.filterItem} ${isActive ? styles.active : ''}`}
                                 style={{ '--filter-color': color } as React.CSSProperties}
                                 onClick={() => toggleRelationshipType(type as RelationshipType)}
+                                aria-pressed={isActive}
+                                aria-label={`${type.replace(/_/g, ' ')} relationships (${count})`}
                             >
-                                <div className={styles.filterCheckbox} />
-                                <div className={styles.filterColorDot} style={{ backgroundColor: color }} />
+                                <div className={styles.filterCheckbox} aria-hidden="true" />
+                                <div className={styles.filterColorDot} style={{ backgroundColor: color }} aria-hidden="true" />
                                 <span className={styles.filterLabel}>{type.replace(/_/g, ' ')}</span>
                                 <span className={styles.filterCount}>{count}</span>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
@@ -137,12 +147,75 @@ export function FilterPanel() {
 
             {/* Show Unconnected Nodes Toggle */}
             <div className={styles.filterSection}>
-                <div
+                <button
                     className={`${styles.filterItem} ${!hideUnconnectedNodes ? styles.active : ''}`}
                     onClick={toggleHideUnconnectedNodes}
+                    aria-pressed={!hideUnconnectedNodes}
+                    aria-label="Show unconnected nodes"
                 >
-                    <div className={styles.filterCheckbox} />
+                    <div className={styles.filterCheckbox} aria-hidden="true" />
                     <span className={styles.filterLabel}>Show Unconnected Nodes</span>
+                </button>
+            </div>
+
+            {/* Confidence Threshold */}
+            <div className={styles.filterSection}>
+                <div className={styles.filterHeader}>
+                    <span className={styles.filterTitle}>Confidence Threshold</span>
+                    <span className={styles.filterCount}>{Math.round(confidenceThreshold * 100)}%</span>
+                </div>
+                <div className={styles.sliderContainer}>
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={confidenceThreshold * 100}
+                        onChange={(e) => setConfidenceThreshold(Number(e.target.value) / 100)}
+                        className={styles.slider}
+                        aria-label={`Confidence threshold: ${Math.round(confidenceThreshold * 100)}%`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(confidenceThreshold * 100)}
+                    />
+                    <div className={styles.sliderLabels}>
+                        <span>0%</span>
+                        <span>50%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Year Range Filter */}
+            <div className={styles.filterSection}>
+                <div className={styles.filterHeader}>
+                    <span className={styles.filterTitle}>Year Range (Papers)</span>
+                </div>
+                <div className={styles.yearRangeContainer}>
+                    <input
+                        type="number"
+                        placeholder="From"
+                        value={yearRange.min ?? ''}
+                        onChange={(e) => setYearRange(
+                            e.target.value ? Number(e.target.value) : null,
+                            yearRange.max
+                        )}
+                        className={styles.yearInput}
+                        min="1990"
+                        max="2030"
+                    />
+                    <span className={styles.yearRangeSeparator}>–</span>
+                    <input
+                        type="number"
+                        placeholder="To"
+                        value={yearRange.max ?? ''}
+                        onChange={(e) => setYearRange(
+                            yearRange.min,
+                            e.target.value ? Number(e.target.value) : null
+                        )}
+                        className={styles.yearInput}
+                        min="1990"
+                        max="2030"
+                    />
                 </div>
             </div>
 

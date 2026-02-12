@@ -32,16 +32,24 @@ A fixed vocabulary enables deterministic reasoning rules (e.g., interpreting cha
 
 ---
 
-### C. No "Fuzzy" Entity Resolution
+### C. Semantic Entity Resolution (Implemented)
 
-**Limitation:**  
-Entity deduplication relies on exact matching of canonicalized names (e.g., `neural_radiance_fields`). It does not automatically merge semantic variants like "GS" and "Gaussian Splatting" across different papers unless they normalize to the exact same string.
+**Current State:**  
+Entity deduplication uses a two-tier resolution system:
+1. **Tier A (Deterministic):** Exact matching of canonicalized names
+2. **Tier B (Semantic):** Embedding-based similarity matching with strict auto-approval rules
+
+**Implementation:**  
+- Entities are linked (not merged) through `entity_links` table with `alias_of` relationships
+- Only high-confidence matches (similarity ≥ 0.95, shared alias/phrase, no short acronyms) are auto-approved
+- All other matches are proposed for manual review
+- Query-time resolution via `nodes_resolved` and `edges_resolved` views preserves original node IDs
 
 **Trade-off:**  
-The graph may be slightly fragmented (duplicate nodes for the same conceptual entity).
+Strict auto-approval thresholds may leave some semantic variants as separate nodes until manually reviewed, but this prevents false merges that would corrupt the graph.
 
 **Why:**  
-False merges are irreversible and destroy information. We prefer a slightly fragmented graph over one where distinct concepts are incorrectly collapsed. Semantic entity resolution is an intentional future extension point rather than a PoC omission.
+False merges are irreversible and destroy information. The link-based approach (rather than destructive merges) allows all canonicalization decisions to be audited and reversed.
 
 ---
 

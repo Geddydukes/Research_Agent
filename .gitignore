@@ -27,6 +27,10 @@ downloads/
 TAKE_HOME_SUBMISSION_REPORT.txt
 DIAGRAM_SPECIFICATION_REPORT.txt
 
+# Implementation planning docs (internal use only)
+docs/IMPLEMENTATION_PLANS.md
+docs/API_ENDPOINTS_IMPLEMENTATION_PLAN.md
+
 # Database exports and merge maps
 *_database_export_*.json
 *_dedupe_export_*.json

@@ -37,6 +37,8 @@ interface GraphStore {
     activeEntityTypes: Set<EntityType>;
     activeRelationshipTypes: Set<RelationshipType>;
     hideUnconnectedNodes: boolean;
+    confidenceThreshold: number;  // 0-1, minimum confidence to show
+    yearRange: { min: number | null; max: number | null };  // null means no limit
 
     // Clustering
     clusterMode: ClusterMode;
@@ -61,6 +63,8 @@ interface GraphStore {
     setAllEntityTypes: (active: boolean) => void;
     setAllRelationshipTypes: (active: boolean) => void;
     toggleHideUnconnectedNodes: () => void;
+    setConfidenceThreshold: (threshold: number) => void;
+    setYearRange: (min: number | null, max: number | null) => void;
 
     // Cluster actions
     setClusterMode: (mode: ClusterMode) => void;
@@ -142,6 +146,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     activeEntityTypes: new Set(['method', 'dataset', 'metric', 'concept', 'task', 'model']),
     activeRelationshipTypes: new Set(['extends', 'improves', 'uses', 'evaluates', 'compares_to', 'implements', 'based_on']),
     hideUnconnectedNodes: true,  // Default to hiding unconnected nodes
+    confidenceThreshold: 0,  // Default: show all confidence levels
+    yearRange: { min: null, max: null },  // Default: show all years
 
     clusterMode: 'type',
 
@@ -156,7 +162,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     setGraphData: (data) => {
         const forceGraphData = transformToForceGraph(data);
 
-        // Extract unique types
         const entityTypes = new Set(data.nodes.map(n => n.type.toLowerCase()));
         const relationshipTypes = new Set(data.edges.map(e => e.relationship_type.toLowerCase()));
 
@@ -223,6 +228,10 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         set({ hideUnconnectedNodes: !hideUnconnectedNodes });
     },
 
+    setConfidenceThreshold: (threshold) => set({ confidenceThreshold: threshold }),
+
+    setYearRange: (min, max) => set({ yearRange: { min, max } }),
+
     // Cluster actions
     setClusterMode: (mode) => set({ clusterMode: mode }),
 
@@ -237,29 +246,47 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
     // Computed
     getFilteredForceGraphData: () => {
-        const { forceGraphData, activeEntityTypes, activeRelationshipTypes, hideUnconnectedNodes } = get();
+        const { forceGraphData, activeEntityTypes, activeRelationshipTypes, hideUnconnectedNodes, confidenceThreshold, yearRange } = get();
         if (!forceGraphData) return null;
 
-        // Filter nodes by active entity types
-        let filteredNodes = forceGraphData.nodes.filter(node =>
-            activeEntityTypes.has(node.entity.type.toLowerCase() as EntityType)
-        );
+        // Filter nodes by active entity types, confidence threshold, AND year range (for papers)
+        let filteredNodes = forceGraphData.nodes.filter(node => {
+            const nodeConfidence = node.entity.adjusted_confidence ?? node.entity.original_confidence ?? 1;
+
+            // Check entity type
+            if (!activeEntityTypes.has(node.entity.type.toLowerCase() as EntityType)) {
+                return false;
+            }
+
+            // Check confidence
+            if (nodeConfidence < confidenceThreshold) {
+                return false;
+            }
+
+            // Check year range (only for Paper entities with year metadata)
+            if (node.entity.type.toLowerCase() === 'paper' && node.entity.metadata?.year) {
+                const year = node.entity.metadata.year as number;
+                if (yearRange.min !== null && year < yearRange.min) return false;
+                if (yearRange.max !== null && year > yearRange.max) return false;
+            }
+
+            return true;
+        });
 
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
 
-        // Filter links by active relationship types AND valid nodes
-        const filteredLinks = forceGraphData.links.filter(link => {
+        let filteredLinks = forceGraphData.links.filter(link => {
             const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
             const targetId = typeof link.target === 'string' ? link.target : link.target.id;
 
             return (
                 activeRelationshipTypes.has(link.edge.relationship_type.toLowerCase() as RelationshipType) &&
                 filteredNodeIds.has(sourceId) &&
-                filteredNodeIds.has(targetId)
+                filteredNodeIds.has(targetId) &&
+                link.edge.confidence >= confidenceThreshold
             );
         });
 
-        // Optionally hide nodes that have no connections
         if (hideUnconnectedNodes) {
             const connectedNodeIds = new Set<string>();
             filteredLinks.forEach(link => {

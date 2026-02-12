@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { createTestServerWithRealDb } from './utils/dbHelpers';
 
-describe('Pipeline API', () => {
+const describeDb = (globalThis as any).__SKIP_DB_TESTS__ ? describe.skip : describe;
+
+describeDb('Pipeline API', () => {
   let server: any;
   let cleanup: () => Promise<void>;
 
@@ -77,9 +79,13 @@ describe('Pipeline API', () => {
 
   describe('GET /api/pipeline/status/:jobId', () => {
     it('should return 404 for non-existent job', async () => {
+      const missingJobId = '00000000-0000-0000-0000-000000000001';
       const response = await server.inject({
         method: 'GET',
-        url: '/api/pipeline/status/non-existent',
+        url: `/api/pipeline/status/${missingJobId}`,
+        headers: {
+          'x-api-key': process.env.API_KEY || 'test-api-key',
+        },
       });
 
       expect(response.statusCode).toBe(404);

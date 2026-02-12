@@ -461,3 +461,145 @@
     font-size: 12px;
     color: #64748b;
 }
+
+/* Search Mode Toggle */
+.searchModeToggle {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.searchModeBtn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.searchModeBtn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f8fafc;
+}
+
+.searchModeBtn.active {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #a5b4fc;
+}
+
+.searchModeBtn svg {
+    opacity: 0.7;
+}
+
+.searchModeBtn.active svg {
+    opacity: 1;
+}
+
+/* Semantic result content */
+.resultContent {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.resultDetails {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.similarityScore {
+    font-size: 11px;
+    font-weight: 600;
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.notInGraph {
+    font-size: 10px;
+    color: #64748b;
+    font-style: italic;
+}
+
+.resultItem.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.resultItem.clickable:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.errorText {
+    color: #f87171;
+    font-size: 13px;
+}
+
+/* Shared panel modals (Settings, Review, Run) */
+.modalPanel {
+    background: linear-gradient(135deg, #12121a 0%, #1a1a25 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    animation: slideUp 0.3s ease;
+}
+
+.modalPanelHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modalPanelTitle {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f8fafc;
+    margin: 0;
+}
+
+.modalPanelClose {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.modalPanelClose:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f8fafc;
+}
+
+.modalPanelBody {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}

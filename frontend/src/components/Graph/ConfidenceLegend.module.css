@@ -1,0 +1,33 @@
+.legend {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+  width: 160px;
+  z-index: 5;
+}
+
+.label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #e2e8f0;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.9), rgba(250, 204, 21, 0.9), rgba(34, 197, 94, 0.9));
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #cbd5f5;
+}

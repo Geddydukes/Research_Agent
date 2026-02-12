@@ -38,6 +38,11 @@ import {
   resetCacheStats,
 } from '../cache/derived';
 import { buildSubgraph } from '../reasoning/buildSubgraph';
+import { decrypt } from '../services/encryption';
+import { EmbeddingsClient } from '../embeddings/embed';
+import { normalizeTextForEmbedding } from '../embeddings/similarity';
+import { EntityEmbeddingService, type EntityContext } from '../entities/embeddingService';
+import { EntityResolver } from '../entities/resolver';
 
 interface Logger {
   error(message: string, context?: Record<string, unknown>): void;
@@ -67,7 +72,12 @@ function formatSectionsForDb(
 async function insertEntitiesWithDedup(
   db: DatabaseClient,
   validatedEntities: ValidationOutput['validated_entities'],
+  originalEntities: EntityOutput['entities'], // Original entities with metadata
   paperId: string,
+  paperTitle: string | undefined,
+  paperSections: Array<{ section_type: string; content: string }>,
+  apiKey: string | undefined,
+  tenantId: string,
   logger: Logger = defaultLogger
 ): Promise<Map<string, number>> {
   const startTime = Date.now();
@@ -90,10 +100,25 @@ async function insertEntitiesWithDedup(
     logger.info(`[Pipeline] ${rejectedEntities.length} entities rejected (persisted for review)`);
   }
 
+  // Initialize embedding service and resolver if API key available
+  let embeddingService: EntityEmbeddingService | null = null;
+  let resolver: EntityResolver | null = null;
+  if (apiKey) {
+    embeddingService = new EntityEmbeddingService(apiKey);
+    resolver = new EntityResolver(embeddingService);
+  }
+
   const lookupPairs = entitiesToProcess.map((entity) => ({
     canonical_name: canonicalize(entity.canonical_name),
     type: entity.type,
   }));
+
+  // Create map from canonical name to original entity for metadata access
+  const originalEntityMap = new Map<string, EntityOutput['entities'][0]>();
+  for (const origEntity of originalEntities) {
+    const canonicalKey = canonicalize(origEntity.canonical_name);
+    originalEntityMap.set(canonicalKey, origEntity);
+  }
 
   const lookupStart = Date.now();
   const existingNodes = await db.findNodesByCanonicalNames(lookupPairs);
@@ -107,8 +132,22 @@ async function insertEntitiesWithDedup(
     review_status: 'approved' | 'flagged' | 'rejected';
     review_reasons: string | undefined;
     metadata: Record<string, unknown>;
+    embedding_raw?: number[];
+    embedding_index?: number[];
     entityIndex: number;
   }> = [];
+
+  const linkProposals: Array<{
+    nodeId: number;
+    canonicalNodeId: number;
+    confidence: number;
+    sharedAlias: boolean;
+    sharedPhrase: boolean;
+    autoApprove: boolean;
+    entityIndex: number;
+  }> = [];
+
+  const aliasInserts: Array<{ nodeId: number; aliasName: string }> = [];
 
   for (let i = 0; i < entitiesToProcess.length; i++) {
     const entity = entitiesToProcess[i]!;
@@ -117,20 +156,111 @@ async function insertEntitiesWithDedup(
     
     const existingNode = existingNodes.get(key);
     if (existingNode) {
+      // Exact match found
       entityMap.set(canonicalKey, existingNode.id);
+      
+      // Store alias for original name if different
+      if (entity.canonical_name !== canonicalKey) {
+        aliasInserts.push({
+          nodeId: existingNode.id,
+          aliasName: entity.canonical_name,
+        });
+      }
     } else {
-      nodesToInsert.push({
-        type: entity.type,
-        canonical_name: canonicalKey,
-        original_confidence: entity.original_confidence,
-        adjusted_confidence: entity.adjusted_confidence,
-        review_status: entity.decision,
-        review_reasons: entity.reason,
-        metadata: {
-          display_name: entity.canonical_name,
-        },
-        entityIndex: i,
-      });
+      // No exact match - try semantic resolution if resolver available
+      let resolvedNodeId: number | null = null;
+      let shouldCreateLink = false;
+      let linkData: typeof linkProposals[0] | null = null;
+      let embeddingPair: { raw: number[]; index: number[] } | null = null;
+
+      if (resolver && embeddingService) {
+        try {
+          // Build entity context from paper sections
+          const entitySection = paperSections.find(s => 
+            s.content.toLowerCase().includes(entity.canonical_name.toLowerCase())
+          );
+          const evidence = entitySection?.content || '';
+          // Get definition from original entity if available
+          const origEntity = originalEntityMap.get(canonicalKey);
+          const entityDefinition = origEntity?.metadata?.definition as string | undefined || 
+                           entitySection?.content.slice(0, 200);
+
+          const entityContext: EntityContext = {
+            name: entity.canonical_name,
+            type: entity.type,
+            definition: entityDefinition,
+            paperTitle,
+            evidence: evidence.slice(0, 500), // Limit evidence length
+          };
+
+          // Generate embeddings once
+          embeddingPair = await embeddingService.generateEmbedding(entityContext, tenantId);
+
+          // Resolve entity
+          const resolution = await resolver.resolveEntity(entityContext, embeddingPair, db);
+
+          if (resolution.action === 'exact_match' && resolution.canonicalNodeId) {
+            resolvedNodeId = resolution.canonicalNodeId;
+            entityMap.set(canonicalKey, resolvedNodeId);
+            
+            // Store alias
+            aliasInserts.push({
+              nodeId: resolvedNodeId,
+              aliasName: entity.canonical_name,
+            });
+          } else if (resolution.action === 'auto_approve' && resolution.canonicalNodeId && resolution.linkProposal) {
+            // Will create node and link after insertion
+            shouldCreateLink = true;
+            linkData = {
+              canonicalNodeId: resolution.canonicalNodeId,
+              confidence: resolution.linkProposal.confidence,
+              sharedAlias: resolution.linkProposal.sharedAlias,
+              sharedPhrase: resolution.linkProposal.sharedPhrase,
+              autoApprove: true,
+              nodeId: 0, // Will be set after node creation
+              entityIndex: i,
+            };
+          } else if (resolution.action === 'propose_link' && resolution.canonicalNodeId && resolution.linkProposal) {
+            // Will create node and proposal after insertion
+            shouldCreateLink = true;
+            linkData = {
+              canonicalNodeId: resolution.canonicalNodeId,
+              confidence: resolution.linkProposal.confidence,
+              sharedAlias: resolution.linkProposal.sharedAlias,
+              sharedPhrase: resolution.linkProposal.sharedPhrase,
+              autoApprove: false,
+              nodeId: 0, // Will be set after node creation
+              entityIndex: i,
+            };
+          }
+        } catch (err) {
+          logger.warn(`[Pipeline] Entity resolution failed for ${entity.canonical_name}: ${err instanceof Error ? err.message : String(err)}`);
+          // Fall through to create new node
+        }
+      }
+
+      // Create new node if not resolved
+      if (!resolvedNodeId) {
+        nodesToInsert.push({
+          type: entity.type,
+          canonical_name: canonicalKey,
+          original_confidence: entity.original_confidence,
+          adjusted_confidence: entity.adjusted_confidence,
+          review_status: entity.decision,
+          review_reasons: entity.reason,
+          metadata: {
+            display_name: entity.canonical_name,
+            definition: originalEntityMap.get(canonicalKey)?.metadata?.definition,
+          },
+          embedding_raw: embeddingPair?.raw,
+          embedding_index: embeddingPair?.index,
+          entityIndex: i,
+        });
+
+        if (shouldCreateLink && linkData) {
+          linkProposals.push({ ...linkData, entityIndex: i });
+        }
+      }
     }
   }
 
@@ -143,10 +273,82 @@ async function insertEntitiesWithDedup(
     const insertedNodes = await db.insertNodes(nodesForInsert);
     logger.info(`[Pipeline] Node batch insert: ${Date.now() - insertStart}ms for ${insertedNodes.length} nodes`);
 
+    const linkProposalByEntityIndex = new Map<number, typeof linkProposals[number]>();
+    for (const proposal of linkProposals) {
+      linkProposalByEntityIndex.set(proposal.entityIndex, proposal);
+    }
+
+    const canonicalNodeIds = Array.from(
+      new Set(linkProposals.map((proposal) => proposal.canonicalNodeId))
+    );
+    const aliasTargetsByNodeId = await db.getApprovedAliasTargetsForNodes(canonicalNodeIds);
+
+    // Update entity map and create links
     for (let i = 0; i < nodesToInsert.length; i++) {
       const canonicalKey = lookupPairs[nodesToInsert[i]!.entityIndex]!.canonical_name;
-      entityMap.set(canonicalKey, insertedNodes[i]!.id);
+      const newNodeId = insertedNodes[i]!.id;
+      entityMap.set(canonicalKey, newNodeId);
+
+      // Update link proposals with actual node IDs
+      const linkProposal = linkProposalByEntityIndex.get(nodesToInsert[i]!.entityIndex);
+      if (linkProposal) {
+        linkProposal.nodeId = newNodeId;
+
+        const aliasTarget = aliasTargetsByNodeId.get(linkProposal.canonicalNodeId);
+        if (aliasTarget) {
+          // If the selected canonical node is itself an alias, use its approved canonical target.
+          linkProposal.canonicalNodeId = aliasTarget;
+        }
+
+        // Create entity link
+        try {
+          await db.insertEntityLink({
+            node_id: newNodeId,
+            canonical_node_id: linkProposal.canonicalNodeId,
+            link_type: 'alias_of',
+            confidence: linkProposal.confidence,
+            status: linkProposal.autoApprove ? 'approved' : 'proposed',
+            evidence: linkProposal.sharedPhrase ? 'Shared phrase detected' : undefined,
+          });
+          
+          if (linkProposal.autoApprove) {
+            logger.info(`[Pipeline] Auto-approved entity link: ${newNodeId} -> ${linkProposal.canonicalNodeId}`);
+          } else {
+            logger.info(`[Pipeline] Proposed entity link: ${newNodeId} -> ${linkProposal.canonicalNodeId}`);
+          }
+        } catch (err) {
+          logger.warn(`[Pipeline] Failed to create entity link: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // Store alias for original name
+      const entity = entitiesToProcess[nodesToInsert[i]!.entityIndex]!;
+      if (entity.canonical_name !== canonicalKey) {
+        aliasInserts.push({
+          nodeId: newNodeId,
+          aliasName: entity.canonical_name,
+        });
+      }
     }
+  }
+
+  // Insert aliases
+  if (aliasInserts.length > 0) {
+    const aliasPromises = aliasInserts.map(async ({ nodeId, aliasName }) => {
+      try {
+        await db.insertEntityAlias({
+          node_id: nodeId,
+          alias_name: aliasName,
+          source_paper_id: paperId,
+        });
+      } catch (err) {
+        // Ignore duplicate alias errors
+        if (!(err instanceof Error && err.message.includes('duplicate'))) {
+          logger.warn(`[Pipeline] Failed to insert alias: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    });
+    await Promise.allSettled(aliasPromises);
   }
 
   const mentionsStart = Date.now();
@@ -159,7 +361,7 @@ async function insertEntitiesWithDedup(
   await db.insertEntityMentions(mentions);
   logger.info(`[Pipeline] Mention batch insert: ${Date.now() - mentionsStart}ms for ${mentions.length} mentions`);
 
-  logger.info(`[Pipeline] Entity dedupe total: ${Date.now() - startTime}ms (${entitiesToProcess.length} entities, ${nodesToInsert.length} new nodes)`);
+  logger.info(`[Pipeline] Entity dedupe total: ${Date.now() - startTime}ms (${entitiesToProcess.length} entities, ${nodesToInsert.length} new nodes, ${linkProposals.length} links created)`);
   
   return entityMap;
 }
@@ -230,17 +432,41 @@ async function insertEdges(
 
 export async function runPipeline(
   input: PaperInput,
+  tenantId: string,
   db?: DatabaseClient,
   logger: Logger = defaultLogger,
-  options?: { runReasoning?: boolean; forceReingest?: boolean }
+  options?: { runReasoning?: boolean; forceReingest?: boolean; reasoningDepth?: number; onProgress?: (stage: string) => void }
 ): Promise<PipelineResult> {
   const startTime = Date.now();
-  const dbClient = db || createDatabaseClient();
+  const dbClient = db || createDatabaseClient(tenantId);
   const runReasoning =
     options?.runReasoning ?? process.env.REASONING_ENABLED === 'true';
   const forceReingest = options?.forceReingest ?? process.env.FORCE_REINGEST === '1';
 
+  // Load tenant settings
+  const tenantSettings = await dbClient.getTenantSettings();
+  if (!tenantSettings) {
+    throw new Error(`Tenant settings not found for tenant ${tenantId}`);
+  }
+
   resetCacheStats();
+  const reportProgress = (stage: string) => {
+    try {
+      options?.onProgress?.(stage);
+    } catch {
+      // ignore progress errors
+    }
+  };
+
+  let tenantApiKey: string | undefined;
+  if (tenantSettings.execution_mode === 'byo_key' && tenantSettings.api_key_encrypted) {
+    try {
+      tenantApiKey = await decrypt(tenantSettings.api_key_encrypted);
+    } catch (error) {
+      logger.error(`Failed to decrypt tenant API key: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to decrypt tenant API key for BYO key mode');
+    }
+  }
 
   try {
     logger.info(`Processing paper ${input.paper_id}`);
@@ -271,6 +497,7 @@ export async function runPipeline(
     }
 
     logger.info('[Ingestion] Starting...');
+    reportProgress('ingestion');
     const trimmedRaw = input.raw_text.slice(0, 60000);
     const ingestionInput = {
       paper_id: input.paper_id,
@@ -291,6 +518,9 @@ export async function runPipeline(
         schemaVersion: SCHEMA_VERSIONS.ingestion,
         provider: 'gemini',
         modelOverride: AGENT_MODELS.ingestion,
+        tenantId,
+        executionMode: tenantSettings.execution_mode,
+        apiKeyOverride: tenantApiKey,
       }
     );
 
@@ -317,6 +547,27 @@ export async function runPipeline(
       },
     });
 
+    // Compute and store embedding for the paper
+    const apiKey = tenantApiKey || process.env.GOOGLE_API_KEY;
+    if (apiKey && (ingested.title || abstractSection?.content)) {
+      try {
+        const emb = new EmbeddingsClient(apiKey);
+        const paperText = normalizeTextForEmbedding(
+          ingested.title || '',
+          abstractSection?.content || ''
+        );
+        const [embedding] = await emb.embedTexts([paperText], tenantId, 'gemini-embedding-001');
+        
+        if (embedding) {
+          await dbClient.upsertPaperEmbedding(ingested.paper_id, embedding);
+          logger.info(`[Pipeline] Stored embedding for ${ingested.paper_id}`);
+        }
+      } catch (err) {
+        logger.warn(`[Pipeline] Failed to store embedding: ${err instanceof Error ? err.message : String(err)}`);
+        // Don't fail the pipeline if embedding storage fails
+      }
+    }
+
     const sections = formatSectionsForDb(ingested.paper_id, ingested.sections);
     const sectionsHash = computeDerivedHash(
       'sections',
@@ -326,7 +577,8 @@ export async function runPipeline(
     );
     const cachedSections = await readDerivedCache<PaperSection[]>(
       'sections',
-      sectionsHash
+      sectionsHash,
+      tenantId
     );
     let insertedSections: PaperSection[];
     if (cachedSections) {
@@ -338,7 +590,8 @@ export async function runPipeline(
         sectionsHash,
         insertedSections,
         SCHEMA_VERSIONS.ingestion,
-        PROMPT_VERSIONS.ingestion
+        PROMPT_VERSIONS.ingestion,
+        tenantId
       );
     }
     const sectionIdByPartIndex = new Map<number, number>();
@@ -347,6 +600,7 @@ export async function runPipeline(
     }
 
     logger.info('[EntityExtraction] Starting...');
+    reportProgress('entity_extraction');
     const entityInput = {
       paper_id: ingested.paper_id,
       sections: ingested.sections,
@@ -364,6 +618,9 @@ export async function runPipeline(
         schemaVersion: SCHEMA_VERSIONS.entityExtraction,
         provider: 'gemini',
         modelOverride: AGENT_MODELS.entityExtraction,
+        tenantId,
+        executionMode: tenantSettings.execution_mode,
+        apiKeyOverride: tenantApiKey,
       }
     );
 
@@ -379,6 +636,7 @@ export async function runPipeline(
     }
 
     logger.info('[RelationshipCoreExtraction] Starting...');
+    reportProgress('relationship_extraction');
     const relationshipInput = {
       entities: entities.entities,
       sections: ingested.sections,
@@ -397,6 +655,9 @@ export async function runPipeline(
         schemaVersion: SCHEMA_VERSIONS.relationshipExtraction,
         provider: 'gemini',
         modelOverride: AGENT_MODELS.relationshipExtraction,
+        tenantId,
+        executionMode: tenantSettings.execution_mode,
+        apiKeyOverride: tenantApiKey,
       }
     );
 
@@ -404,7 +665,14 @@ export async function runPipeline(
       `[RelationshipCoreExtraction] Extracted ${coreRelationships.relationships.length} relationships`
     );
 
-    const relationshipsSorted = [...coreRelationships.relationships].sort((a, b) => {
+    const allowedRelationshipTypes = (tenantSettings.enabled_relationship_types || []).map((t) => t.toLowerCase());
+    const filteredRelationships = allowedRelationshipTypes.length > 0
+      ? coreRelationships.relationships.filter((rel) =>
+          allowedRelationshipTypes.includes(rel.relationship_type.toLowerCase())
+        )
+      : coreRelationships.relationships;
+
+    const relationshipsSorted = [...filteredRelationships].sort((a, b) => {
       const keyA = `${a.source_canonical_name}::${a.relationship_type}::${a.target_canonical_name}`;
       const keyB = `${b.source_canonical_name}::${b.relationship_type}::${b.target_canonical_name}`;
       return keyA.localeCompare(keyB);
@@ -422,7 +690,8 @@ export async function runPipeline(
 
     const cachedRelationships = await readDerivedCache<typeof relationshipsSorted>(
       'relationship_candidates',
-      relationshipCandidatesHash
+      relationshipCandidatesHash,
+      tenantId
     );
 
     const coreEdgesForValidation = (cachedRelationships || relationshipsSorted).map((rel) => ({
@@ -442,11 +711,13 @@ export async function runPipeline(
         relationshipCandidatesHash,
         relationshipsSorted,
         SCHEMA_VERSIONS.relationshipExtraction,
-        PROMPT_VERSIONS.relationshipExtraction
+        PROMPT_VERSIONS.relationshipExtraction,
+        tenantId
       );
     }
 
     logger.info('[Validation] Starting (deterministic rules)...');
+    reportProgress('validation');
     const validated = validateEntitiesAndEdges(entities.entities, coreEdgesForValidation);
 
     const entityStats = { approved: 0, flagged: 0, rejected: 0 };
@@ -465,10 +736,16 @@ export async function runPipeline(
     );
 
     // 5. Persist all entities and edges (including flagged/rejected for review)
+    reportProgress('persist_entities_edges');
     const entityMap = await insertEntitiesWithDedup(
       dbClient,
       validated.validated_entities,
+      entities.entities, // Original entities with metadata
       ingested.paper_id,
+      ingested.title,
+      ingested.sections,
+      tenantApiKey || process.env.GOOGLE_API_KEY,
+      tenantId,
       logger
     );
 
@@ -485,7 +762,8 @@ export async function runPipeline(
     
     const cachedEntities = await readDerivedCache<Array<[string, number]>>(
       'entities',
-      mergedEntitiesHash
+      mergedEntitiesHash,
+      tenantId
     );
     
     if (!cachedEntities) {
@@ -494,7 +772,8 @@ export async function runPipeline(
         mergedEntitiesHash,
         entitiesForCache,
         SCHEMA_VERSIONS.entityExtraction,
-        PROMPT_VERSIONS.entityExtraction
+        PROMPT_VERSIONS.entityExtraction,
+        tenantId
       );
     }
 
@@ -537,7 +816,8 @@ export async function runPipeline(
     logger.info(`[Pipeline] Edge batch insert: ${Date.now() - edgeInsertStart}ms for ${edgeIdByKey.size} edges`);
 
     if (approvedEdges.length > 0) {
-      logger.info('[RelationshipEvidenceEnrichment] Starting...');
+    logger.info('[RelationshipEvidenceEnrichment] Starting...');
+    reportProgress('evidence');
       
       const approvedEdgeKeys = approvedEdges.map((ve) => 
         `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`
@@ -577,6 +857,9 @@ export async function runPipeline(
           schemaVersion: SCHEMA_VERSIONS.relationshipExtraction,
           provider: 'gemini',
           modelOverride: AGENT_MODELS.relationshipExtraction,
+          tenantId,
+          executionMode: tenantSettings.execution_mode,
+          apiKeyOverride: tenantApiKey,
         }
       );
 
@@ -636,13 +919,16 @@ export async function runPipeline(
     if (!runReasoning) {
       logger.info('[Reasoning] Skipped (disabled or batched)');
     } else {
+      reportProgress('reasoning');
       logger.info('[Reasoning] Starting...');
       const useFullGraph = process.env.REASON_FULL_GRAPH === '1';
       if (!useFullGraph) {
         logger.info('[Reasoning] Using subgraph fetch (set REASON_FULL_GRAPH=1 to use full corpus)');
       }
       
-      const depth = Number(process.env.REASONING_DEPTH || '2');
+      const depth = options?.reasoningDepth
+        ?? tenantSettings.max_reasoning_depth
+        ?? Number(process.env.REASONING_DEPTH || '2');
       const { input: reasoningInput, scope } = await buildSubgraph(
         dbClient,
         [ingested.paper_id],
@@ -678,6 +964,9 @@ export async function runPipeline(
           schemaVersion: SCHEMA_VERSIONS.insight,
           provider: 'gemini',
           modelOverride: AGENT_MODELS.reasoning,
+          tenantId,
+          executionMode: tenantSettings.execution_mode,
+          apiKeyOverride: tenantApiKey,
         }
       );
 
@@ -761,6 +1050,7 @@ export async function runPipeline(
       graphConsistency: inconsistentEdges.length === 0 ? 'valid' : `warning: ${inconsistentEdges.length} issues`,
     });
 
+    reportProgress('completed');
     return {
       success: true,
       paper_id: input.paper_id,
@@ -828,4 +1118,3 @@ export async function runPipeline(
     };
   }
 }
-

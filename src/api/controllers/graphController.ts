@@ -32,14 +32,17 @@ export class GraphController {
     request: FastifyRequest<{ Querystring: NeighborhoodQuerystring }>,
     reply: FastifyReply
   ) {
+    let depth = request.query.depth ? parseInt(request.query.depth, 10) : undefined;
+    if (depth !== undefined) {
+      if (isNaN(depth) || depth < 1) depth = 1;
+      if (depth > 20) depth = 20;
+    }
     const params: GraphNeighborhoodParams = {
       nodeId: request.query.nodeId
         ? parseInt(request.query.nodeId, 10)
         : undefined,
       paperId: request.query.paperId,
-      depth: request.query.depth
-        ? parseInt(request.query.depth, 10)
-        : undefined,
+      depth,
       maxNodes: request.query.maxNodes
         ? parseInt(request.query.maxNodes, 10)
         : undefined,
@@ -56,11 +59,14 @@ export class GraphController {
     request: FastifyRequest<{ Querystring: ViewportQuerystring }>,
     reply: FastifyReply
   ) {
+    let depth = request.query.depth ? parseInt(request.query.depth, 10) : undefined;
+    if (depth !== undefined) {
+      if (isNaN(depth) || depth < 1) depth = 1;
+      if (depth > 20) depth = 20;
+    }
     const params: GraphViewportParams = {
       paperId: request.query.paperId,
-      depth: request.query.depth
-        ? parseInt(request.query.depth, 10)
-        : undefined,
+      depth,
       maxNodes: request.query.maxNodes
         ? parseInt(request.query.maxNodes, 10)
         : undefined,

@@ -46,7 +46,8 @@ describe('EmbeddingsClient batching', () => {
       embedding: { values: [1, 2, 3] },
     });
 
-    const results = await client.embedTexts(texts);
+    const TEST_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const results = await client.embedTexts(texts, TEST_TENANT_ID);
 
     expect(results).toHaveLength(3);
     expect(mockModel.embedContent).toHaveBeenCalledTimes(3);
@@ -63,7 +64,8 @@ describe('EmbeddingsClient batching', () => {
       embedding: { values: [1, 2, 3] },
     });
 
-    const results = await client.embedTexts(texts);
+    const TEST_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const results = await client.embedTexts(texts, TEST_TENANT_ID);
 
     expect(results[0]).toEqual([1, 2, 3]);
     expect(results[1]).toEqual([9, 9, 9]);
@@ -80,7 +82,8 @@ describe('EmbeddingsClient batching', () => {
       embedding: { values: [1, 2, 3] },
     });
 
-    const results = await client.embedTexts(texts);
+    const TEST_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const results = await client.embedTexts(texts, TEST_TENANT_ID);
 
     expect(results).toHaveLength(3);
     expect(mockModel.embedContent).toHaveBeenCalledTimes(2);
@@ -88,7 +91,8 @@ describe('EmbeddingsClient batching', () => {
   });
 
   it('returns empty array for empty input', async () => {
-    const results = await client.embedTexts([]);
+    const TEST_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+    const results = await client.embedTexts([], TEST_TENANT_ID);
     expect(results).toEqual([]);
     expect(mockModel.embedContent).not.toHaveBeenCalled();
   });
