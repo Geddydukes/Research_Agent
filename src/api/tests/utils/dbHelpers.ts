@@ -42,6 +42,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'A test method' },
     original_confidence: 0.9,
     adjusted_confidence: 0.85,
+    review_status: 'approved',
   });
 
   const node2 = await db.insertNode({
@@ -50,6 +51,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'A test dataset' },
     original_confidence: 0.8,
     adjusted_confidence: 0.75,
+    review_status: 'approved',
   });
 
   const node3 = await db.insertNode({
@@ -58,6 +60,7 @@ export async function createTestData(): Promise<{
     metadata: { description: 'Accuracy metric' },
     original_confidence: 0.95,
     adjusted_confidence: 0.9,
+    review_status: 'approved',
   });
 
   // Create test sections
@@ -87,6 +90,7 @@ export async function createTestData(): Promise<{
     confidence: 0.9,
     evidence: 'Paper mentions using this dataset',
     provenance: { source_paper_id: paper1.paper_id },
+    review_status: 'approved',
   });
 
   const edge2 = await db.insertEdge({
@@ -96,6 +100,7 @@ export async function createTestData(): Promise<{
     confidence: 0.85,
     evidence: 'Method evaluated with accuracy',
     provenance: { source_paper_id: paper1.paper_id },
+    review_status: 'approved',
   });
 
   // Create test insights

@@ -8,3 +8,7 @@ export { registerPipelineRoutes } from './pipeline';
 export { registerNodesRoutes } from './nodes';
 export { registerUsageRoutes } from './usage';
 export { registerEntityLinksRoutes } from './entityLinks';
+export { registerSettingsRoutes } from './settings';
+export { registerTenantsRoutes } from './tenants';
+export { registerReviewRoutes } from './review';
+export { registerExportRoutes } from './export';

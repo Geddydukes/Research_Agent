@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { useGraphStore } from '../../stores/graphStore';
-import type { Entity } from '../../types';
+import { apiClient } from '../../api/client';
+import type { Entity, Paper } from '../../types';
 import styles from './Panels.module.css';
 
-// Helper to get paper URL from metadata
-function getPaperUrl(metadata: Record<string, unknown> | null): string | null {
+function getPaperUrl(paper: Paper): string | null {
+    const metadata = paper.metadata as Record<string, unknown> | null;
+    if (metadata?.url && typeof metadata.url === 'string') return metadata.url;
     if (!metadata?.externalIds) return null;
     const ids = metadata.externalIds as Record<string, string>;
-
     if (ids.ArXiv) return `https://arxiv.org/abs/${ids.ArXiv}`;
     if (ids.DOI) return `https://doi.org/${ids.DOI}`;
     if (ids.CorpusId) return `https://www.semanticscholar.org/paper/${ids.CorpusId}`;
@@ -32,11 +33,31 @@ interface EntityDetailPanelProps {
 
 export function EntityDetailPanel({ entity, onClose, onEdgeClick }: EntityDetailPanelProps) {
     const { graphData, getEntityTypeColor, getRelationshipColor } = useGraphStore();
+    const [papers, setPapers] = useState<Paper[]>([]);
+    const [papersLoading, setPapersLoading] = useState(true);
+    const [papersError, setPapersError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        setPapersLoading(true);
+        setPapersError(null);
+        apiClient
+            .getPapersForNode(entity.id)
+            .then((data) => {
+                if (!cancelled) setPapers(data || []);
+            })
+            .catch((err) => {
+                if (!cancelled) setPapersError(err instanceof Error ? err.message : 'Failed to load papers');
+            })
+            .finally(() => {
+                if (!cancelled) setPapersLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, [entity.id]);
 
     const color = getEntityTypeColor(entity.type);
     const confidence = entity.adjusted_confidence ?? entity.original_confidence ?? 0;
 
-    // Get edges from already-loaded graph data (not from API)
     const edges = useMemo(() => {
         if (!graphData) return [];
         return graphData.edges.filter(
@@ -44,7 +65,6 @@ export function EntityDetailPanel({ entity, onClose, onEdgeClick }: EntityDetail
         );
     }, [graphData, entity.id]);
 
-    // Get related entities from graph data
     const relatedEntities = useMemo(() => {
         if (!graphData || edges.length === 0) return [];
 
@@ -63,26 +83,65 @@ export function EntityDetailPanel({ entity, onClose, onEdgeClick }: EntityDetail
         }).filter(r => r.relatedEntity);
     }, [graphData, edges, entity.id]);
 
-    // Get connected papers from related entities (papers connected to this entity)
-    const connectedPapers = useMemo(() => {
-        return relatedEntities
-            .filter(r => r.relatedEntity?.type.toLowerCase() === 'paper')
-            .map(r => r.relatedEntity!)
-            .filter((paper, index, self) =>
-                index === self.findIndex(p => p.id === paper.id)
-            );  // Deduplicate
-    }, [relatedEntities]);
+    const papersFromProvenance = useMemo(() => {
+        if (!graphData) return new Map<string, { paper_id: string; title?: string }>();
+        const paperIds = new Set<string>();
+        edges.forEach((e) => {
+            const p = e.provenance as { paper_id?: string; meta?: { source_paper_id?: string; target_paper_id?: string } } | null;
+            if (p?.paper_id) paperIds.add(p.paper_id);
+            if (p?.meta?.source_paper_id) paperIds.add(p.meta.source_paper_id);
+            if (p?.meta?.target_paper_id) paperIds.add(p.meta.target_paper_id);
+        });
+        const map = new Map<string, { paper_id: string; title?: string }>();
+        paperIds.forEach((id) => map.set(id, { paper_id: id }));
+        graphData.nodes.forEach((n) => {
+            if (n.type?.toLowerCase() === 'paper' && n.canonical_name) {
+                const id = n.canonical_name;
+                if (paperIds.has(id)) map.set(id, { paper_id: id, title: (n.metadata?.title as string) || undefined });
+            }
+        });
+        return map;
+    }, [graphData, edges]);
 
-    // Get display name - use metadata.title for papers if available
+    const allPapers = useMemo(() => {
+        const byId = new Map<string, Paper>();
+        papers.forEach((p) => byId.set(p.paper_id, p));
+        papersFromProvenance.forEach((info, id) => {
+            if (!byId.has(id)) {
+                byId.set(id, {
+                    paper_id: id,
+                    title: info.title ?? null,
+                    abstract: null,
+                    year: null,
+                    metadata: null,
+                    created_at: '',
+                });
+            }
+        });
+        return Array.from(byId.values());
+    }, [papers, papersFromProvenance]);
+
     const isPaper = entity.type.toLowerCase() === 'paper';
     const metadataTitle = entity.metadata?.title as string | undefined;
     const displayName = (isPaper && metadataTitle) ? metadataTitle : entity.canonical_name;
+
+    const contextSnippet = useMemo(() => {
+        const edgeWithEvidence = edges.find((e) => e.evidence?.trim());
+        if (!edgeWithEvidence?.evidence) return null;
+        const text = edgeWithEvidence.evidence.trim();
+        return text.length > 140 ? `${text.slice(0, 137)}…` : text;
+    }, [edges]);
 
     return (
         <div className={styles.panelContainer}>
             <div className={styles.panelHeader}>
                 <div>
                     <h2 className={styles.panelTitle}>{displayName}</h2>
+                    {contextSnippet && (
+                        <p className={styles.contextSnippet} title={contextSnippet}>
+                            In context: {contextSnippet}
+                        </p>
+                    )}
                     <div
                         className={styles.entityType}
                         style={{
@@ -143,18 +202,26 @@ export function EntityDetailPanel({ entity, onClose, onEdgeClick }: EntityDetail
                             <line x1="16" y1="13" x2="8" y2="13" />
                             <line x1="16" y1="17" x2="8" y2="17" />
                         </svg>
-                        Papers ({connectedPapers.length})
+                        Papers ({allPapers.length})
                     </h3>
 
-                    {connectedPapers.length > 0 ? (
+                    {papersLoading ? (
+                        <div className={styles.emptyState}>
+                            <div className={styles.emptyText}>Loading papers…</div>
+                        </div>
+                    ) : papersError ? (
+                        <div className={styles.emptyState}>
+                            <div className={styles.emptyText}>{papersError}</div>
+                        </div>
+                    ) : allPapers.length > 0 ? (
                         <div className={styles.papersList}>
-                            {connectedPapers.map(paper => {
-                                const paperTitle = getEntityDisplayName(paper);
-                                const paperUrl = getPaperUrl(paper.metadata);
-                                const year = paper.metadata?.year as number | undefined;
+                            {allPapers.map((paper) => {
+                                const paperTitle = paper.title || paper.paper_id;
+                                const paperUrl = getPaperUrl(paper);
+                                const year = paper.year ?? (paper.metadata?.year as number | undefined);
 
                                 return (
-                                    <div key={paper.id} className={styles.paperItem}>
+                                    <div key={paper.paper_id} className={styles.paperItem}>
                                         {paperUrl ? (
                                             <a
                                                 href={paperUrl}

@@ -1,14 +1,22 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createDatabaseClient } from '../../db/client';
 import { createError } from '../middleware/errorHandler';
-import { requireTenantAuth } from '../middleware/tenantAuth';
+
+function getTenantId(request: FastifyRequest): string {
+  const tenantId = request.tenantId;
+  if (!tenantId) {
+    throw createError('Tenant ID is required', 400, 'TENANT_REQUIRED');
+  }
+  return tenantId;
+}
 
 export class EntityLinksController {
-  constructor(private server: FastifyInstance) {}
+  constructor(_server: FastifyInstance) {
+    void _server;
+  }
 
   async getEntityLinks(request: FastifyRequest, reply: FastifyReply) {
-    await requireTenantAuth(request, reply);
-    const tenantId = (request as any).tenantId;
+    const tenantId = getTenantId(request);
     const db = createDatabaseClient(tenantId);
 
     const query = request.query as {
@@ -29,8 +37,7 @@ export class EntityLinksController {
   }
 
   async getProposals(request: FastifyRequest, reply: FastifyReply) {
-    await requireTenantAuth(request, reply);
-    const tenantId = (request as any).tenantId;
+    const tenantId = getTenantId(request);
     const db = createDatabaseClient(tenantId);
 
     const proposals = await db.getEntityLinks({
@@ -62,8 +69,7 @@ export class EntityLinksController {
   }
 
   async updateLinkStatus(request: FastifyRequest, reply: FastifyReply) {
-    await requireTenantAuth(request, reply);
-    const tenantId = (request as any).tenantId;
+    const tenantId = getTenantId(request);
     const db = createDatabaseClient(tenantId);
 
     const params = request.params as { linkId: string };
@@ -83,8 +89,7 @@ export class EntityLinksController {
   }
 
   async bulkUpdate(request: FastifyRequest, reply: FastifyReply) {
-    await requireTenantAuth(request, reply);
-    const tenantId = (request as any).tenantId;
+    const tenantId = getTenantId(request);
     const db = createDatabaseClient(tenantId);
 
     const body = request.body as {
@@ -120,8 +125,7 @@ export class EntityLinksController {
   }
 
   async getEntityAliases(request: FastifyRequest, reply: FastifyReply) {
-    await requireTenantAuth(request, reply);
-    const tenantId = (request as any).tenantId;
+    const tenantId = getTenantId(request);
     const db = createDatabaseClient(tenantId);
 
     const params = request.params as { nodeId: string };

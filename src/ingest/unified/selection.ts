@@ -340,7 +340,7 @@ async function applySemanticGating(params: {
       try {
         await db.upsertPaperEmbedding(seed.paperId, seedVec);
       } catch (err) {
-        log.warn('[SemanticGating] Failed to store seed embedding', { err });
+        (log as { info: (m: string, o?: object) => void; warn: (m: string, o?: object) => void }).warn('[SemanticGating] Failed to store seed embedding', { err });
       }
     }
   } else {
@@ -386,7 +386,7 @@ async function applySemanticGating(params: {
         needComputation: candidatesNeedingEmbedding.length,
       });
     } catch (err) {
-      log.warn('[SemanticGating] DB query failed, computing all embeddings', { err });
+      (log as { info: (m: string, o?: object) => void; warn: (m: string, o?: object) => void }).warn('[SemanticGating] DB query failed, computing all embeddings', { err });
       candidatesNeedingEmbedding = candidatesToEmbed;
     }
   }

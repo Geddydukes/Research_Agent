@@ -3,8 +3,9 @@ import { createUsageTrackingService } from '../src/services/usageTracking';
 import { calculateCost, getModelPricing } from '../src/services/pricing';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+const describeDb = (globalThis as any).__SKIP_DB_TESTS__ ? describe.skip : describe;
 
-describe('Usage Tracking Integration', () => {
+describeDb('Usage Tracking Integration', () => {
   const usageTracking = createUsageTrackingService();
 
   describe('Cost Calculation', () => {
@@ -102,4 +103,3 @@ describe('Usage Tracking Integration', () => {
     });
   });
 });
-

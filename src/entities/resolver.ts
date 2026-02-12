@@ -1,6 +1,6 @@
 import type { DatabaseClient, Node } from '../db/client';
 import { EntityEmbeddingService, type EntityContext, type EmbeddingPair } from './embeddingService';
-import { hasSharedPhrase, hasExactDefinitionMatch, hasSharedAlias } from './sharedPhrase';
+import { hasSharedPhrase, hasExactDefinitionMatch } from './sharedPhrase';
 import { canonicalize } from '../utils/canonicalize';
 
 export interface ResolutionResult {
@@ -165,7 +165,7 @@ export class EntityResolver {
   async findSemanticCandidates(
     embeddingPair: EmbeddingPair,
     entityType: string,
-    entityName: string,
+    _entityName: string,
     db: DatabaseClient
   ): Promise<Array<{
     node_id: number;

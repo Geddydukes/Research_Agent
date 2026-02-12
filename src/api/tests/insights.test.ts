@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { createTestServerWithRealDb } from './utils/dbHelpers';
 
-describe('Insights API', () => {
+const describeDb = (globalThis as any).__SKIP_DB_TESTS__ ? describe.skip : describe;
+
+describeDb('Insights API', () => {
   let server: any;
   let cleanup: () => Promise<void>;
   let testData: Awaited<ReturnType<typeof createTestServerWithRealDb>>['testData'];

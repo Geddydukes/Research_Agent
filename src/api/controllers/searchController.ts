@@ -1,10 +1,16 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SearchService } from '../services/searchService';
 import { createError } from '../middleware/errorHandler';
+import { ArxivClient } from '../../ingest/arxiv/client';
 
 interface SearchQuerystring {
   q: string;
   type?: 'paper' | 'node';
+  limit?: string;
+}
+
+interface ArxivSearchQuerystring {
+  q: string;
   limit?: string;
 }
 
@@ -73,5 +79,25 @@ export class SearchController {
         count: results.length,
       },
     });
+  }
+
+  async searchArxiv(
+    request: FastifyRequest<{ Querystring: ArxivSearchQuerystring }>,
+    reply: FastifyReply
+  ) {
+    const { q, limit } = request.query;
+
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      throw createError('Search query (q) is required', 400);
+    }
+
+    const maxResults = limit ? Math.min(Math.max(1, parseInt(limit, 10)), 40) : 20;
+    if (isNaN(maxResults)) {
+      throw createError('Limit must be a number', 400, 'INVALID_LIMIT');
+    }
+
+    const arxiv = new ArxivClient();
+    const papers = await arxiv.search(q.trim(), maxResults);
+    reply.send({ data: papers });
   }
 }

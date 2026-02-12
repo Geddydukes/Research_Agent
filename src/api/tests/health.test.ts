@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { createTestServerWithRealDb } from './utils/dbHelpers';
 
-describe('Health Check', () => {
+const describeDb = (globalThis as any).__SKIP_DB_TESTS__ ? describe.skip : describe;
+
+describeDb('Health Check', () => {
   let server: any;
   let cleanup: () => Promise<void>;
 

@@ -3,12 +3,31 @@ import { promisify } from 'util';
 
 const scryptAsync = promisify(scrypt);
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
+const INSECURE_DEV_FALLBACK_KEY = 'default-key-change-in-production';
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 16; // 128 bits
 const SALT_LENGTH = 32;
 const TAG_LENGTH = 16;
+let hasWarnedFallbackKey = false;
+
+function getEncryptionKey(): string {
+  const key = process.env.ENCRYPTION_KEY?.trim();
+  if (key) {
+    return key;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ENCRYPTION_KEY is required in production');
+  }
+
+  if (!hasWarnedFallbackKey) {
+    console.warn('[Encryption] Using insecure fallback key outside production. Set ENCRYPTION_KEY.');
+    hasWarnedFallbackKey = true;
+  }
+
+  return INSECURE_DEV_FALLBACK_KEY;
+}
 
 async function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
   return (await scryptAsync(password, salt, KEY_LENGTH)) as Buffer;
@@ -21,7 +40,7 @@ export async function encrypt(value: string): Promise<string> {
 
   const salt = randomBytes(SALT_LENGTH);
   const iv = randomBytes(IV_LENGTH);
-  const key = await deriveKey(ENCRYPTION_KEY, salt);
+  const key = await deriveKey(getEncryptionKey(), salt);
 
   const cipher = createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(value, 'utf8');
@@ -46,7 +65,7 @@ export async function decrypt(encryptedValue: string): Promise<string> {
       combined.length - TAG_LENGTH
     );
 
-    const key = await deriveKey(ENCRYPTION_KEY, salt);
+    const key = await deriveKey(getEncryptionKey(), salt);
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
 
@@ -71,4 +90,3 @@ export function isEncrypted(value: string): boolean {
     return false;
   }
 }
-

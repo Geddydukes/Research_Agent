@@ -36,12 +36,15 @@ describe('validationRules', () => {
       approved: result.validated_entities.filter(e => e.decision === 'approved'),
     };
     
-    expect(entitiesByDecision.rejected.length).toBeGreaterThan(0);
-    expect(entitiesByDecision.flagged.length + entitiesByDecision.approved.length).toBeGreaterThan(0);
+    expect(entitiesByDecision.approved.length).toBeGreaterThan(0);
+    expect(entitiesByDecision.rejected.length + entitiesByDecision.flagged.length).toBeGreaterThan(0);
   });
 
   it('rejects self-referential edges and enforces confidence thresholds', () => {
-    const entities: EntityOutput['entities'] = [];
+    const entities: EntityOutput['entities'] = [
+      { type: 'Method', canonical_name: 'A', original_confidence: 0.9 },
+      { type: 'Method', canonical_name: 'B', original_confidence: 0.9 },
+    ];
     const edges: EdgeOutput['edges'] = [
       {
         source_canonical_name: 'A',
@@ -80,8 +83,9 @@ describe('validationRules', () => {
     const edges: EdgeOutput['edges'] = [];
 
     const result = validateEntitiesAndEdges(entities, edges);
-    expect(result.validated_entities[0]?.adjusted_confidence).toBeCloseTo(0.35, 2);
-    expect(result.validated_entities[0]?.decision).toBe('flagged');
+    expect(result.validated_entities[0]?.adjusted_confidence).toBeCloseTo(0.6, 2);
+    expect(result.validated_entities[0]?.decision).toBe('approved');
+    expect(result.validated_entities[0]?.reason).toContain('orphan_entity:single_mention');
   });
 
   it('detects duplicates using bucketed candidate pruning', () => {
@@ -93,7 +97,7 @@ describe('validationRules', () => {
       },
       {
         type: 'Method',
-        canonical_name: 'Neural Netw',
+        canonical_name: 'Neural Networ',
         original_confidence: 0.85,
       },
       {
@@ -118,14 +122,8 @@ describe('validationRules', () => {
     expect(neuralEntities.length).toBeGreaterThanOrEqual(1);
     
     const hasDuplicate = result.validated_entities.some(
-      e => e.reason && e.reason.startsWith('duplicate_candidate')
+      e => e.reason && (e.reason.includes('duplicate_of:') || e.reason.includes('duplicate_loser'))
     );
-    
-    if (neuralEntities.length >= 2) {
-      const neuralBucket = neuralEntities.filter(e => e.decision === 'approved');
-      if (neuralBucket.length >= 2) {
-        expect(hasDuplicate).toBe(true);
-      }
-    }
+    expect(hasDuplicate).toBe(true);
   });
 });

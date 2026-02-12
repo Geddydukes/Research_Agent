@@ -1,6 +1,5 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import fetch from 'node-fetch';
 import type { SSPaper } from './client';
 import { extractArxivId } from '../arxiv/util';
 import { limit } from '../../utils/limiter';

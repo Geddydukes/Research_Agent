@@ -3,17 +3,29 @@ import { createClient } from '@supabase/supabase-js';
 import { createError } from './errorHandler';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+export type TenantRole = 'owner' | 'member' | 'viewer';
+type AuthMethod = 'user' | 'api_key';
 
 declare module 'fastify' {
   interface FastifyRequest {
     tenantId?: string;
     userId?: string;
+    userEmail?: string;
+    userRole?: TenantRole;
+    authMethod?: AuthMethod;
   }
+}
+
+function isApiKeyAuthenticated(request: FastifyRequest): boolean {
+  const apiKey = request.headers['x-api-key'] as string | undefined;
+  const expectedKey = process.env.API_KEY;
+  return Boolean(apiKey && expectedKey && apiKey === expectedKey);
 }
 
 async function extractTenantId(
   request: FastifyRequest,
-  userId?: string
+  userId?: string,
+  allowDefaultTenant = false
 ): Promise<string> {
   const headerTenantId = request.headers['x-tenant-id'] as string | undefined;
   if (headerTenantId) {
@@ -65,10 +77,14 @@ async function extractTenantId(
     }
   }
 
-  return DEFAULT_TENANT_ID;
+  if (allowDefaultTenant) {
+    return DEFAULT_TENANT_ID;
+  }
+
+  throw createError('Tenant context is required', 400, 'TENANT_REQUIRED');
 }
 
-async function extractUserId(request: FastifyRequest): Promise<string | undefined> {
+async function extractUser(request: FastifyRequest): Promise<{ id?: string; email?: string } | undefined> {
   const authHeader = request.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -79,12 +95,10 @@ async function extractUserId(request: FastifyRequest): Promise<string | undefine
   
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       return undefined;
     }
-
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
@@ -92,27 +106,22 @@ async function extractUserId(request: FastifyRequest): Promise<string | undefine
       return undefined;
     }
 
-    return user.id;
+    return {
+      id: user.id,
+      email: user.email || undefined,
+    };
   } catch (error) {
     return undefined;
   }
 }
 
-async function verifyTenantAccess(
-  userId: string | undefined,
+async function resolveTenantRole(
+  userId: string,
   tenantId: string
-): Promise<boolean> {
-  if (!userId) {
-    return true;
-  }
-
-  if (tenantId === DEFAULT_TENANT_ID) {
-    return true;
-  }
-
+): Promise<TenantRole | null> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!supabaseUrl || !supabaseKey) {
     throw createError('Missing Supabase configuration', 500, 'CONFIG_ERROR');
   }
@@ -120,35 +129,53 @@ async function verifyTenantAccess(
   const supabase = createClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
     .from('tenant_users')
-    .select('id')
+    .select('role')
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     .maybeSingle();
 
   if (error) {
-    throw createError(`Failed to verify tenant access: ${error.message}`, 500, 'TENANT_VERIFY_ERROR');
+    throw createError(`Failed to verify tenant membership: ${error.message}`, 500, 'TENANT_VERIFY_ERROR');
   }
 
-  return data !== null;
+  return (data?.role as TenantRole | undefined) || null;
 }
 
 export async function requireTenant(
   request: FastifyRequest,
-  _reply: FastifyReply
+  reply: FastifyReply
 ): Promise<void> {
   try {
-    const userId = await extractUserId(request);
-    const tenantId = await extractTenantId(request, userId);
+    const existingUserId = request.userId;
+    const existingUserEmail = request.userEmail;
+    const user = existingUserId
+      ? { id: existingUserId, email: existingUserEmail }
+      : await extractUser(request);
+    const apiKeyAuthenticated = request.authMethod === 'api_key' || isApiKeyAuthenticated(request);
+    const userId = user?.id;
+
+    if (!userId && !apiKeyAuthenticated) {
+      throw createError('Session invalid or expired. Please sign in again.', 401, 'AUTH_REQUIRED');
+    }
+
+    const tenantId = await extractTenantId(request, userId, apiKeyAuthenticated && !userId);
+    let userRole: TenantRole = 'owner';
 
     if (userId) {
-      const hasAccess = await verifyTenantAccess(userId, tenantId);
-      if (!hasAccess) {
+      const role = await resolveTenantRole(userId, tenantId);
+      if (!role) {
         throw createError('Access denied to tenant', 403, 'TENANT_ACCESS_DENIED');
       }
+      userRole = role;
     }
 
     request.tenantId = tenantId;
     request.userId = userId;
+    request.userEmail = user?.email;
+    request.userRole = userRole;
+    request.authMethod = userId ? 'user' : 'api_key';
+
+    void reply;
   } catch (error: any) {
     if (error.statusCode && error.code) {
       throw error;
@@ -165,12 +192,64 @@ export async function optionalTenant(
   request: FastifyRequest
 ): Promise<void> {
   try {
-    const userId = await extractUserId(request);
-    const tenantId = await extractTenantId(request, userId);
+    const user = await extractUser(request);
+    const userId = user?.id;
+    const tenantId = await extractTenantId(request, userId, !userId);
+    const userRole = userId ? await resolveTenantRole(userId, tenantId) : undefined;
     request.tenantId = tenantId;
     request.userId = userId;
+    request.userEmail = user?.email;
+    request.userRole = userRole || undefined;
+    request.authMethod = userId ? 'user' : undefined;
   } catch (error) {
     // Endpoint handles missing tenant context
   }
 }
 
+export async function requireUser(
+  request: FastifyRequest,
+  _reply: FastifyReply
+): Promise<void> {
+  const authHeader = request.headers.authorization;
+  const hasBearer = authHeader?.startsWith('Bearer ');
+  if (hasBearer) {
+    const user = await extractUser(request);
+    if (user?.id) {
+      request.userId = user.id;
+      request.userEmail = user.email;
+      request.authMethod = 'user';
+      return;
+    }
+    throw createError('Session invalid or expired. Please sign in again.', 401, 'SESSION_INVALID');
+  }
+
+  const apiKey = request.headers['x-api-key'] as string | undefined;
+  const expectedKey = process.env.API_KEY;
+  if (apiKey && expectedKey && apiKey === expectedKey) {
+    request.authMethod = 'api_key';
+    return;
+  }
+
+  throw createError('Session invalid or expired. Please sign in again.', 401, 'AUTH_REQUIRED');
+}
+
+export async function requireTenantWriteAccess(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  if (!request.tenantId) {
+    await requireTenant(request, reply);
+  }
+
+  if (request.authMethod === 'api_key') {
+    return;
+  }
+
+  if (request.userRole === 'viewer') {
+    throw createError(
+      'This account is read-only and cannot perform this action.',
+      403,
+      'READ_ONLY_ACCOUNT'
+    );
+  }
+}

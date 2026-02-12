@@ -2,7 +2,9 @@
 
 > Entity-first knowledge graphs from research papers with explainable provenance
 
-**Quick Links**: [Live Demo](https://research-agent-eta.vercel.app) · [Architecture](docs/SYSTEM_ARCHITECTURE_OVERVIEW.md) · [Example Queries](sql/queries.sql)
+**Quick Links**: [Live](https://research-agent-eta.vercel.app) · [Architecture](docs/SYSTEM_ARCHITECTURE_OVERVIEW.md) · [Example Queries](sql/queries.sql) · [OSS Launch Checklist](docs/LAUNCH_OSS_CHECKLIST.md) · [Contributing](CONTRIBUTING.md)
+
+**OSS**: You can download, run locally, contribute (PRs/issues), and use **bring-your-own-key** (BYOK) so the host doesn’t need to provide API keys. The app stays hosted at the current site; Stripe or shared keys may be added later if there’s enough demand.
 
 **Example corpus**: 46 papers → 228 entities → 267 relationships with evidence
 
@@ -119,6 +121,53 @@ Instead of destructively merging these variants (which breaks if you make a mist
 
 **Why this matters**: False merges are catastrophic—"Attention (deep learning)" and "Attention (psychology)" are not the same. Link-based canonicalization lets you audit and reverse every decision.
 
+---
+
+## Using the App
+
+- **Graph**: Force-directed knowledge graph of entities (methods, concepts, datasets, metrics) and relationships. Click a node for the entity panel; click an edge for relationship details and evidence. The graph locks after the layout settles so you can select without dragging. Multiple relationships between the same pair of nodes are drawn in parallel.
+- **Run**: Submit a paper (arXiv search, URL, file, or paste). The pipeline extracts entities and relationships, then runs optional reasoning to produce multi-hop insights. After a run, the graph refreshes automatically.
+- **Insights**: Lists inferred insights (transitive relationships, gaps, trends) from the pipeline’s reasoning step. Data is loaded from `GET /api/insights` (tenant-scoped). If the tab is empty, run at least one paper through the pipeline so reasoning can populate the `inferred_insights` table.
+- **Settings**: Workspace settings, reasoning depth (Quick / Standard / Deep / Rigorous), semantic threshold, speculative edges, cost/token limits, and BYOK API key.
+- **Review**: Queue of flagged entities and edges for approval or rejection.
+- **Search**: Full-text and semantic search over entities and papers.
+- **Entity panel**: Click a node to see details, confidence, connected papers (from entity_mentions and edge provenance), relationships, and an “In context” snippet from the first edge evidence.
+- **Edge modal**: Relationship type, confidence, evidence quote, provenance, and related insights.
+
+Full setup (DB migrations, BYOK, deployment) is in [docs/LAUNCH_OSS_CHECKLIST.md](docs/LAUNCH_OSS_CHECKLIST.md).
+
+## Try It Locally
+
+1. **Backend**: `cp env.example .env`, set `GOOGLE_API_KEY`, Supabase URL and keys (`SUPABASE_URL`, `SUPABASE_ANON_KEY` for sign-in; optional `SUPABASE_SERVICE_ROLE_KEY`), then `npm install` and `npm run api:run` (API at `http://localhost:3000`).
+2. **Frontend**: In `frontend/`, create `frontend/.env` with `VITE_API_URL=http://localhost:3000` and your Supabase URL and anon key (for sign-in). Optionally set `VITE_USE_MOCK=false` if you want to force real API; when `VITE_API_URL` is set, the app uses the API by default. Then `npm install` and `npm run dev` (app at `http://localhost:5173`).
+3. Sign in, pick a workspace, then use **Run** → **Search arXiv** (or URL/file) to run the pipeline on a paper. After ingestion and reasoning, the graph and **Insights** tab will populate.
+
+## Environment (sign-in / 401 fix)
+
+For sign-in and Bearer auth to work, the **API** `.env` must have:
+
+- **SUPABASE_URL** – Supabase project URL (Dashboard → Project Settings → API)
+- **SUPABASE_ANON_KEY** – anon (public) key from the same API page (used to validate JWTs)
+
+If either is missing, the API will return 401 and you’ll see “Session invalid or expired. Please sign in again.” The API logs a warning at startup if `SUPABASE_ANON_KEY` is not set. You can use `SUPABASE_SERVICE_ROLE_KEY` instead of `SUPABASE_ANON_KEY` for JWT validation if you prefer.
+
+The frontend needs **VITE_API_URL** and Supabase keys in `frontend/.env` so it can call the API and Supabase Auth. If **Insights** (or other tenant-scoped data) doesn’t load, ensure you’re signed in and a workspace is selected; insights appear after running papers through the pipeline (reasoning step).
+
+## Database Migrations (Supabase)
+
+SQL migrations live in `src/db/migrations/`. Supabase does not allow raw SQL execution via the service role API, so apply these manually:
+
+1. Open the Supabase SQL editor.
+2. Run each migration file in order.
+
+To list migrations (and optionally print SQL):
+
+```
+npm run migrations:sql
+# or
+npm run migrations:sql -- --print
+```
+
 ### Evidence-First Schema
 
 Every relationship edge requires:
@@ -199,7 +248,7 @@ These aren't just "papers that cite 3DGS"—they're papers that explicitly claim
 - **API:** Fastify with tenant isolation
 
 ### AI & Embeddings
-- **LLMs:** Google Gemini 2.5 Pro & Flash
+- **LLMs:** Google Gemini (e.g. 2.5 Pro / Flash; see `env.example` and `src/agents/config.ts`)
 - **Embeddings:** `gemini-embedding-001` (3072 dimensions)
 - **Vector Search:** pgvector for paper and entity similarity search
 

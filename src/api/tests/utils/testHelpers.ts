@@ -278,6 +278,7 @@ export function createMockData() {
     abstract: 'This is a test paper',
     year: 2023,
     metadata: { authors: ['Author 1'] },
+    embedding: null,
     created_at: new Date().toISOString(),
   };
 
@@ -288,6 +289,7 @@ export function createMockData() {
     abstract: 'Another test paper',
     year: 2024,
     metadata: { authors: ['Author 2'] },
+    embedding: null,
     created_at: new Date().toISOString(),
   };
 
@@ -302,6 +304,8 @@ export function createMockData() {
     adjusted_confidence: 0.85,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 
@@ -315,6 +319,8 @@ export function createMockData() {
     adjusted_confidence: 0.75,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 
@@ -328,6 +334,8 @@ export function createMockData() {
     adjusted_confidence: 0.9,
     review_status: 'approved',
     review_reasons: null,
+    embedding_raw: null,
+    embedding_index: null,
     created_at: new Date().toISOString(),
   };
 

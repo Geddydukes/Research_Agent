@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { limit } from '../../utils/limiter';
 
 export function extractArxivId(p: { externalIds?: Record<string, string> }): string | null {

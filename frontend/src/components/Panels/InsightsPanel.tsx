@@ -165,12 +165,21 @@ export function InsightsPanel({ onClose }: InsightsPanelProps) {
                 ) : error ? (
                     <div className={styles.emptyState}>
                         <div className={styles.emptyText}>Failed to load insights</div>
+                        <div className={styles.emptyHint}>
+                            Ensure you’re signed in and the API is running. Insights require tenant auth.
+                        </div>
                     </div>
                 ) : filteredInsights.length === 0 ? (
                     <div className={styles.emptyState}>
                         <div className={styles.emptyText}>
-                            {searchQuery || typeFilter ? 'No matching insights' : 'No insights available'}
+                            {searchQuery || typeFilter ? 'No matching insights' : 'No insights yet'}
                         </div>
+                        {!searchQuery && !typeFilter && (
+                            <div className={styles.emptyHint}>
+                                Insights are generated when you run papers through the pipeline (Run → submit a paper).
+                                The reasoning step produces multi-hop insights from the graph.
+                            </div>
+                        )}
                     </div>
                 ) : (
                     filteredInsights.map((insight) => (

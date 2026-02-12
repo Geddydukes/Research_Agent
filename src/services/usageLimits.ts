@@ -38,7 +38,7 @@ export class UsageLimitsService {
 
     const stats = await this.usageTracking.getUsageStats(tenantId, startDate, now);
     const monthlyCostLimit = (tenantSettings as any).monthly_cost_limit;
-    if (monthlyCostLimit !== null && monthlyCostLimit !== undefined) {
+    if (monthlyCostLimit !== null && monthlyCostLimit !== undefined && monthlyCostLimit > 0) {
       const currentCost = stats.total_cost_usd;
       const percentage = (currentCost / monthlyCostLimit) * 100;
       const status = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
@@ -61,7 +61,7 @@ export class UsageLimitsService {
     }
 
     const monthlyTokenLimit = (tenantSettings as any).monthly_token_limit;
-    if (monthlyTokenLimit !== null && monthlyTokenLimit !== undefined) {
+    if (monthlyTokenLimit !== null && monthlyTokenLimit !== undefined && monthlyTokenLimit > 0) {
       const currentTokens = stats.total_input_tokens + stats.total_output_tokens;
       const percentage = (currentTokens / monthlyTokenLimit) * 100;
       const status = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
@@ -87,7 +87,7 @@ export class UsageLimitsService {
 
     if (period === 'daily') {
       const dailyCostLimit = (tenantSettings as any).daily_cost_limit;
-      if (dailyCostLimit !== null && dailyCostLimit !== undefined) {
+      if (dailyCostLimit !== null && dailyCostLimit !== undefined && dailyCostLimit > 0) {
         const currentCost = stats.total_cost_usd;
         const percentage = (currentCost / dailyCostLimit) * 100;
         const status = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
@@ -110,7 +110,7 @@ export class UsageLimitsService {
       }
 
       const dailyTokenLimit = (tenantSettings as any).daily_token_limit;
-      if (dailyTokenLimit !== null && dailyTokenLimit !== undefined) {
+      if (dailyTokenLimit !== null && dailyTokenLimit !== undefined && dailyTokenLimit > 0) {
         const currentTokens = stats.total_input_tokens + stats.total_output_tokens;
         const percentage = (currentTokens / dailyTokenLimit) * 100;
         const status = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
@@ -227,4 +227,3 @@ export class UsageLimitsService {
 export function createUsageLimitsService(): UsageLimitsService {
   return new UsageLimitsService();
 }
-

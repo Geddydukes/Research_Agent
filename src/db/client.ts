@@ -35,6 +35,17 @@ export interface TenantSettings {
   updated_at: string;
 }
 
+export interface PipelineJob {
+  id: string;
+  tenant_id: string;
+  paper_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Node {
   id: number;
   tenant_id: string;
@@ -546,6 +557,35 @@ export class DatabaseClient {
     }
 
     return (data || []) as EntityLink[];
+  }
+
+  async getApprovedAliasTargetsForNodes(nodeIds: number[]): Promise<Map<number, number>> {
+    if (nodeIds.length === 0) {
+      return new Map();
+    }
+
+    const { data, error } = await this.client
+      .from('entity_links')
+      .select('node_id, canonical_node_id')
+      .eq('tenant_id', this.tenantId)
+      .eq('status', 'approved')
+      .eq('link_type', 'alias_of')
+      .in('node_id', nodeIds);
+
+    if (error) {
+      throw new Error(`Failed to get approved alias targets: ${error.message}`);
+    }
+
+    const aliasTargets = new Map<number, number>();
+    for (const row of data || []) {
+      const nodeId = (row as any).node_id as number;
+      const canonicalNodeId = (row as any).canonical_node_id as number;
+      if (!aliasTargets.has(nodeId)) {
+        aliasTargets.set(nodeId, canonicalNodeId);
+      }
+    }
+
+    return aliasTargets;
   }
 
   async updateEntityLinkStatus(
@@ -1200,6 +1240,23 @@ export class DatabaseClient {
   }
 
   /**
+   * Get all papers for export (up to maxLimit). No pagination.
+   */
+  async getPapersForExport(maxLimit = 10000): Promise<Paper[]> {
+    const { data, error } = await this.client
+      .from('papers')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(maxLimit);
+
+    if (error) {
+      throw new Error(`Failed to get papers for export: ${error.message}`);
+    }
+    return (data || []) as Paper[];
+  }
+
+  /**
    * Get all papers with pagination - for API use
    */
   async getAllPapers(params: {
@@ -1353,6 +1410,124 @@ export class DatabaseClient {
   }
 
   /**
+   * Create a pipeline job (tenant-scoped)
+   */
+  async createPipelineJob(params: {
+    paper_id: string;
+    status: PipelineJob['status'];
+  }): Promise<PipelineJob> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .insert({
+        tenant_id: this.tenantId,
+        paper_id: params.paper_id,
+        status: params.status,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create pipeline job: ${error.message}`);
+    }
+
+    return data as PipelineJob;
+  }
+
+  /**
+   * Update a pipeline job (tenant-scoped)
+   */
+  async updatePipelineJob(
+    jobId: string,
+    updates: Partial<Pick<PipelineJob, 'status' | 'result' | 'error'>>
+  ): Promise<PipelineJob> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', this.tenantId)
+      .eq('id', jobId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update pipeline job: ${error.message}`);
+    }
+
+    return data as PipelineJob;
+  }
+
+  /**
+   * Get a pipeline job by ID (tenant-scoped)
+   */
+  async getPipelineJob(jobId: string): Promise<PipelineJob | null> {
+    const { data, error } = await this.client
+      .from('pipeline_jobs')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to get pipeline job: ${error.message}`);
+    }
+
+    return (data || null) as PipelineJob | null;
+  }
+
+  /**
+   * List pipeline jobs (tenant-scoped)
+   */
+  async listPipelineJobs(params?: {
+    page?: number;
+    limit?: number;
+    status?: PipelineJob['status'];
+  }): Promise<{ data: PipelineJob[]; count: number }> {
+    const page = params?.page ?? 1;
+    const limit = Math.min(params?.limit ?? 20, 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = this.client
+      .from('pipeline_jobs')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', this.tenantId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (params?.status) {
+      query = query.eq('status', params.status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Failed to list pipeline jobs: ${error.message}`);
+    }
+
+    return {
+      data: (data || []) as PipelineJob[],
+      count: count || 0,
+    };
+  }
+
+  async countPipelineJobsSince(windowMs: number): Promise<number> {
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+    const { count, error } = await this.client
+      .from('pipeline_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', this.tenantId)
+      .gte('created_at', windowStart);
+
+    if (error) {
+      throw new Error(`Failed to count recent pipeline jobs: ${error.message}`);
+    }
+
+    return count || 0;
+  }
+
+  /**
    * Get tenant members
    */
   async getTenantMembers(): Promise<TenantUser[]> {
@@ -1385,4 +1560,3 @@ export function createDatabaseClient(tenantId: string): DatabaseClient {
 
   return new DatabaseClient(url, serviceRoleKey, tenantId);
 }
-

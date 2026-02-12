@@ -6,7 +6,9 @@ import { encrypt, decrypt } from '../src/services/encryption';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
 
-describe('Multi-Tenant Functionality', () => {
+const describeDb = (globalThis as any).__SKIP_DB_TESTS__ ? describe.skip : describe;
+
+describeDb('Multi-Tenant Functionality', () => {
   let db: ReturnType<typeof createDatabaseClient>;
 
   beforeAll(() => {
@@ -59,7 +61,7 @@ describe('Multi-Tenant Functionality', () => {
   });
 });
 
-describe('Usage Tracking', () => {
+describeDb('Usage Tracking', () => {
   const usageTracking = createUsageTrackingService();
 
   describe('Usage Tracking Service', () => {
@@ -188,4 +190,3 @@ describe('Encryption Service', () => {
     });
   });
 });
-

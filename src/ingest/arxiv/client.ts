@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { XMLParser } from 'fast-xml-parser';
 import { limit } from '../../utils/limiter';
 

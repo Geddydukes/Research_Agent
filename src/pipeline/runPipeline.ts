@@ -273,6 +273,16 @@ async function insertEntitiesWithDedup(
     const insertedNodes = await db.insertNodes(nodesForInsert);
     logger.info(`[Pipeline] Node batch insert: ${Date.now() - insertStart}ms for ${insertedNodes.length} nodes`);
 
+    const linkProposalByEntityIndex = new Map<number, typeof linkProposals[number]>();
+    for (const proposal of linkProposals) {
+      linkProposalByEntityIndex.set(proposal.entityIndex, proposal);
+    }
+
+    const canonicalNodeIds = Array.from(
+      new Set(linkProposals.map((proposal) => proposal.canonicalNodeId))
+    );
+    const aliasTargetsByNodeId = await db.getApprovedAliasTargetsForNodes(canonicalNodeIds);
+
     // Update entity map and create links
     for (let i = 0; i < nodesToInsert.length; i++) {
       const canonicalKey = lookupPairs[nodesToInsert[i]!.entityIndex]!.canonical_name;
@@ -280,20 +290,14 @@ async function insertEntitiesWithDedup(
       entityMap.set(canonicalKey, newNodeId);
 
       // Update link proposals with actual node IDs
-      const linkProposal = linkProposals.find(lp => lp.entityIndex === nodesToInsert[i]!.entityIndex);
+      const linkProposal = linkProposalByEntityIndex.get(nodesToInsert[i]!.entityIndex);
       if (linkProposal) {
         linkProposal.nodeId = newNodeId;
 
-        // Check cycle prevention: canonical nodes cannot have outgoing alias_of
-        const canonicalLinks = await db.getEntityLinks({
-          nodeId: linkProposal.canonicalNodeId,
-          status: 'approved',
-          linkType: 'alias_of',
-        });
-
-        if (canonicalLinks.length > 0) {
-          // The canonical is itself aliased, use the true canonical
-          linkProposal.canonicalNodeId = canonicalLinks[0]!.canonical_node_id;
+        const aliasTarget = aliasTargetsByNodeId.get(linkProposal.canonicalNodeId);
+        if (aliasTarget) {
+          // If the selected canonical node is itself an alias, use its approved canonical target.
+          linkProposal.canonicalNodeId = aliasTarget;
         }
 
         // Create entity link
@@ -431,7 +435,7 @@ export async function runPipeline(
   tenantId: string,
   db?: DatabaseClient,
   logger: Logger = defaultLogger,
-  options?: { runReasoning?: boolean; forceReingest?: boolean }
+  options?: { runReasoning?: boolean; forceReingest?: boolean; reasoningDepth?: number; onProgress?: (stage: string) => void }
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const dbClient = db || createDatabaseClient(tenantId);
@@ -446,6 +450,13 @@ export async function runPipeline(
   }
 
   resetCacheStats();
+  const reportProgress = (stage: string) => {
+    try {
+      options?.onProgress?.(stage);
+    } catch {
+      // ignore progress errors
+    }
+  };
 
   let tenantApiKey: string | undefined;
   if (tenantSettings.execution_mode === 'byo_key' && tenantSettings.api_key_encrypted) {
@@ -486,6 +497,7 @@ export async function runPipeline(
     }
 
     logger.info('[Ingestion] Starting...');
+    reportProgress('ingestion');
     const trimmedRaw = input.raw_text.slice(0, 60000);
     const ingestionInput = {
       paper_id: input.paper_id,
@@ -588,6 +600,7 @@ export async function runPipeline(
     }
 
     logger.info('[EntityExtraction] Starting...');
+    reportProgress('entity_extraction');
     const entityInput = {
       paper_id: ingested.paper_id,
       sections: ingested.sections,
@@ -623,6 +636,7 @@ export async function runPipeline(
     }
 
     logger.info('[RelationshipCoreExtraction] Starting...');
+    reportProgress('relationship_extraction');
     const relationshipInput = {
       entities: entities.entities,
       sections: ingested.sections,
@@ -651,7 +665,14 @@ export async function runPipeline(
       `[RelationshipCoreExtraction] Extracted ${coreRelationships.relationships.length} relationships`
     );
 
-    const relationshipsSorted = [...coreRelationships.relationships].sort((a, b) => {
+    const allowedRelationshipTypes = (tenantSettings.enabled_relationship_types || []).map((t) => t.toLowerCase());
+    const filteredRelationships = allowedRelationshipTypes.length > 0
+      ? coreRelationships.relationships.filter((rel) =>
+          allowedRelationshipTypes.includes(rel.relationship_type.toLowerCase())
+        )
+      : coreRelationships.relationships;
+
+    const relationshipsSorted = [...filteredRelationships].sort((a, b) => {
       const keyA = `${a.source_canonical_name}::${a.relationship_type}::${a.target_canonical_name}`;
       const keyB = `${b.source_canonical_name}::${b.relationship_type}::${b.target_canonical_name}`;
       return keyA.localeCompare(keyB);
@@ -696,6 +717,7 @@ export async function runPipeline(
     }
 
     logger.info('[Validation] Starting (deterministic rules)...');
+    reportProgress('validation');
     const validated = validateEntitiesAndEdges(entities.entities, coreEdgesForValidation);
 
     const entityStats = { approved: 0, flagged: 0, rejected: 0 };
@@ -714,6 +736,7 @@ export async function runPipeline(
     );
 
     // 5. Persist all entities and edges (including flagged/rejected for review)
+    reportProgress('persist_entities_edges');
     const entityMap = await insertEntitiesWithDedup(
       dbClient,
       validated.validated_entities,
@@ -793,7 +816,8 @@ export async function runPipeline(
     logger.info(`[Pipeline] Edge batch insert: ${Date.now() - edgeInsertStart}ms for ${edgeIdByKey.size} edges`);
 
     if (approvedEdges.length > 0) {
-      logger.info('[RelationshipEvidenceEnrichment] Starting...');
+    logger.info('[RelationshipEvidenceEnrichment] Starting...');
+    reportProgress('evidence');
       
       const approvedEdgeKeys = approvedEdges.map((ve) => 
         `${ve.source_canonical_name}::${ve.relationship_type}::${ve.target_canonical_name}`
@@ -895,13 +919,16 @@ export async function runPipeline(
     if (!runReasoning) {
       logger.info('[Reasoning] Skipped (disabled or batched)');
     } else {
+      reportProgress('reasoning');
       logger.info('[Reasoning] Starting...');
       const useFullGraph = process.env.REASON_FULL_GRAPH === '1';
       if (!useFullGraph) {
         logger.info('[Reasoning] Using subgraph fetch (set REASON_FULL_GRAPH=1 to use full corpus)');
       }
       
-      const depth = Number(process.env.REASONING_DEPTH || '2');
+      const depth = options?.reasoningDepth
+        ?? tenantSettings.max_reasoning_depth
+        ?? Number(process.env.REASONING_DEPTH || '2');
       const { input: reasoningInput, scope } = await buildSubgraph(
         dbClient,
         [ingested.paper_id],
@@ -1023,6 +1050,7 @@ export async function runPipeline(
       graphConsistency: inconsistentEdges.length === 0 ? 'valid' : `warning: ${inconsistentEdges.length} issues`,
     });
 
+    reportProgress('completed');
     return {
       success: true,
       paper_id: input.paper_id,
@@ -1090,4 +1118,3 @@ export async function runPipeline(
     };
   }
 }
-

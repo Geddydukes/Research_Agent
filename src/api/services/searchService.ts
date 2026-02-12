@@ -37,20 +37,54 @@ export class SearchService {
       return (this.db as any).searchPapers(query, limit);
     }
 
-    const searchTerm = `%${query}%`;
+    const searchTerm = `%${query.trim().slice(0, 256)}%`;
     const client = (this.db as any).client;
 
-    const { data, error } = await client
-      .from('papers')
-      .select('*')
-      .or(`title.ilike.${searchTerm},abstract.ilike.${searchTerm},paper_id.ilike.${searchTerm}`)
-      .limit(limit);
+    const [titleResult, abstractResult, paperIdResult] = await Promise.all([
+      client
+        .from('papers')
+        .select('*')
+        .eq('tenant_id', this.db.tenantId)
+        .ilike('title', searchTerm)
+        .limit(limit),
+      client
+        .from('papers')
+        .select('*')
+        .eq('tenant_id', this.db.tenantId)
+        .ilike('abstract', searchTerm)
+        .limit(limit),
+      client
+        .from('papers')
+        .select('*')
+        .eq('tenant_id', this.db.tenantId)
+        .ilike('paper_id', searchTerm)
+        .limit(limit),
+    ]);
 
+    const error = titleResult.error || abstractResult.error || paperIdResult.error;
     if (error) {
       throw createError(`Failed to search papers: ${error.message}`, 500);
     }
 
-    return (data || []) as Paper[];
+    const merged = new Map<string, Paper>();
+    for (const row of titleResult.data || []) {
+      merged.set((row as Paper).paper_id, row as Paper);
+      if (merged.size >= limit) break;
+    }
+    if (merged.size < limit) {
+      for (const row of abstractResult.data || []) {
+        merged.set((row as Paper).paper_id, row as Paper);
+        if (merged.size >= limit) break;
+      }
+    }
+    if (merged.size < limit) {
+      for (const row of paperIdResult.data || []) {
+        merged.set((row as Paper).paper_id, row as Paper);
+        if (merged.size >= limit) break;
+      }
+    }
+
+    return Array.from(merged.values()).slice(0, limit);
   }
 
   private async searchNodes(query: string, limit: number): Promise<Node[]> {
@@ -64,6 +98,7 @@ export class SearchService {
     const { data, error } = await (this.db as any).client
       .from('nodes')
       .select('*')
+      .eq('tenant_id', this.db.tenantId)
       .ilike('canonical_name', searchTerm)
       .limit(limit);
 

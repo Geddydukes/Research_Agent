@@ -1,0 +1,52 @@
+.container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #f8fafc;
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tenantBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.label {
+  font-size: 0.65rem;
+  color: #e2e8f0;
+}
+
+.select {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.select:focus {
+  outline: 2px solid rgba(129, 140, 248, 0.6);
+}
+
+.button {
+  border: none;
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.buttonSecondary {
+  border: 1px solid rgba(248, 250, 252, 0.3);
+  background: transparent;
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
